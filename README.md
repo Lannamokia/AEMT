@@ -18,9 +18,7 @@ AEMT 是一个基于 Flutter Windows 的本地视频压制与封装工具，面�
 
 - `frontend/`: Flutter Windows 桌面应用主体
 - `scripts/`: 开发启动与便携打包脚本
-- `tools/flutter/`: 项目内置 Flutter SDK
 - `fonts/`: 项目使用的 MiSans 字体资源
-- `dist/`: 构建输出与便携包产物
 
 ## 运行依赖
 
