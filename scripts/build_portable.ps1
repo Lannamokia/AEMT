@@ -9,7 +9,6 @@ $PSDefaultParameterValues['Add-Content:Encoding'] = 'utf8'
 & "$env:SystemRoot\System32\chcp.com" 65001 > $null
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$flutter = Join-Path $repoRoot 'tools\flutter\bin\flutter.bat'
 $frontend = Join-Path $repoRoot 'frontend'
 $distRoot = Join-Path $repoRoot 'dist'
 $portableRoot = Join-Path $distRoot 'AEMT-windows-portable'
@@ -86,8 +85,30 @@ function Copy-MatchingFiles {
   }
 }
 
-if (-not (Test-Path $flutter)) {
-  throw "Embedded Flutter SDK not found: $flutter"
+function Resolve-FlutterPath {
+  $searchDirectories = @()
+  foreach ($envName in @('FLUTTER_BIN_DIR', 'FLUTTER_ROOT', 'FLUTTER_HOME')) {
+    $envValue = [Environment]::GetEnvironmentVariable($envName)
+    if (-not $envValue) {
+      continue
+    }
+    if ($envName -eq 'FLUTTER_BIN_DIR') {
+      $searchDirectories += $envValue
+    }
+    else {
+      $searchDirectories += (Join-Path $envValue 'bin')
+    }
+  }
+
+  return Resolve-ExecutablePath `
+    -ExecutableName 'flutter.bat' `
+    -SearchDirectories $searchDirectories `
+    -PathFallbacks @('flutter.bat', 'flutter')
+}
+
+$flutter = Resolve-FlutterPath
+if (-not $flutter) {
+  throw 'Flutter executable not found. Set FLUTTER_BIN_DIR or FLUTTER_ROOT/FLUTTER_HOME, or add flutter to PATH.'
 }
 
 $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'

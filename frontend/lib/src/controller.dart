@@ -716,9 +716,17 @@ class AemtController extends ChangeNotifier {
   }
 
   bool shouldUseCompatibleSubtitlePreview(MediaStreamEntry stream) {
-    return stream.kind == StreamKind.subtitle &&
-        stream.origin == StreamOrigin.input &&
-        stream.codec.trim().toLowerCase() == 'arib_caption';
+    return _requiresCompatibleSubtitlePreview(stream);
+  }
+
+  bool supportsDirectEmbeddedSubtitlePreview(MediaStreamEntry stream) {
+    return _supportsDirectEmbeddedSubtitlePreview(stream);
+  }
+
+  bool shouldFallbackToCompatibleSubtitlePreview(MediaStreamEntry stream) {
+    return _requiresCompatibleSubtitlePreview(stream) ||
+        (!_supportsDirectEmbeddedSubtitlePreview(stream) &&
+            _canExtractSubtitleAsAss(stream));
   }
 
   bool canExtractSubtitleForPreview(MediaStreamEntry stream) {
@@ -2641,6 +2649,48 @@ class AemtController extends ChangeNotifier {
       }
     }
     throw Exception('未找到索引为 $streamIndex 的源流。');
+  }
+
+  bool _requiresCompatibleSubtitlePreview(MediaStreamEntry stream) {
+    if (stream.kind != StreamKind.subtitle ||
+        stream.origin != StreamOrigin.input) {
+      return false;
+    }
+    return <String>{'arib_caption'}.contains(stream.codec.trim().toLowerCase());
+  }
+
+  bool _supportsDirectEmbeddedSubtitlePreview(MediaStreamEntry stream) {
+    if (stream.kind != StreamKind.subtitle ||
+        stream.origin != StreamOrigin.input) {
+      return false;
+    }
+    return <String>{
+      'ass',
+      'ssa',
+      'subrip',
+      'srt',
+      'mov_text',
+      'webvtt',
+      'text',
+      'subviewer',
+      'subviewer1',
+      'microdvd',
+      'mpl2',
+      'sami',
+      'realtext',
+      'jacosub',
+      'pjs',
+      'ttml',
+      'stl',
+      'dvd_subtitle',
+      'dvb_subtitle',
+      'dvb_teletext',
+      'hdmv_pgs_subtitle',
+      'pgssub',
+      'xsub',
+      'eia_608',
+      'eia_708',
+    }.contains(stream.codec.trim().toLowerCase());
   }
 
   bool _canExtractSubtitleAsAss(MediaStreamEntry stream) {

@@ -488,6 +488,10 @@ class _Home extends StatelessWidget {
                       track.id != 'auto' && track.id != 'no',
                 )
                 .toList();
+            final String dropdownRefreshKey = _previewDropdownRefreshKey(
+              media.streams,
+              embeddedTracks,
+            );
             final List<DropdownMenuItem<String>>
             items = <DropdownMenuItem<String>>[
               const DropdownMenuItem<String>(value: 'off', child: Text('关闭字幕')),
@@ -514,8 +518,12 @@ class _Home extends StatelessWidget {
             for (final MediaStreamEntry stream in inputSubtitleStreams) {
               final bool useCompatPreview = controller
                   .shouldUseCompatibleSubtitlePreview(stream);
+              final bool supportsDirectPreview = controller
+                  .supportsDirectEmbeddedSubtitlePreview(stream);
               SubtitleTrack? embeddedTrack;
-              if (!useCompatPreview && embeddedCursor < embeddedTracks.length) {
+              if (!useCompatPreview &&
+                  supportsDirectPreview &&
+                  embeddedCursor < embeddedTracks.length) {
                 embeddedTrack = embeddedTracks[embeddedCursor++];
               }
               if (!stream.enabled) {
@@ -526,8 +534,22 @@ class _Home extends StatelessWidget {
                   : (embeddedTrack?.title?.isNotEmpty == true
                         ? embeddedTrack!.title!
                         : '内封字幕 ${stream.index}');
-              if (useCompatPreview || embeddedTrack == null) {
+              if (useCompatPreview) {
                 if (!controller.canExtractSubtitleForPreview(stream)) {
+                  continue;
+                }
+                items.add(
+                  DropdownMenuItem<String>(
+                    value: 'compat:${stream.index}',
+                    child: Text('兼容预览: $baseLabel'),
+                  ),
+                );
+                continue;
+              }
+              if (embeddedTrack == null) {
+                if (!controller.shouldFallbackToCompatibleSubtitlePreview(
+                  stream,
+                )) {
                   continue;
                 }
                 items.add(
@@ -558,6 +580,7 @@ class _Home extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButton<String>(
+                    key: ValueKey<String>(dropdownRefreshKey),
                     isExpanded: true,
                     value: selected,
                     items: items,
@@ -571,6 +594,16 @@ class _Home extends StatelessWidget {
               ],
             );
           },
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '提示：源文件自带的内封字幕默认不会出现在预览列表里，如需预览请先到“音视频 / 字幕 / 字体流”面板手动启用对应字幕流。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF5E6C84),
+            ),
+          ),
         ),
         const SizedBox(height: 10),
         ClipRRect(
@@ -592,6 +625,23 @@ class _Home extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _previewDropdownRefreshKey(
+    List<MediaStreamEntry> streams,
+    List<SubtitleTrack> embeddedTracks,
+  ) {
+    final String streamState = streams
+        .where((MediaStreamEntry stream) => stream.kind == StreamKind.subtitle)
+        .map(
+          (MediaStreamEntry stream) =>
+              '${stream.origin.index}:${stream.index}:${stream.enabled ? 1 : 0}:${stream.externalPath ?? ''}:${stream.title}:${stream.language}:${stream.regionCode}',
+        )
+        .join('|');
+    final String trackState = embeddedTracks
+        .map((SubtitleTrack track) => '${track.id}:${track.title ?? ''}')
+        .join('|');
+    return '$streamState#$trackState';
   }
 
   Widget _streams(BuildContext context, MediaInfo? media) {
@@ -1620,6 +1670,7 @@ String _streamKindLabel(StreamKind kind) {
 }
 
 String _streamSummary(MediaStreamEntry stream) {
+  final String? previewMode = _previewCapabilityLabel(stream);
   final List<String> parts = <String>[
     stream.sourceLabel,
     if (stream.title.isNotEmpty) '标题: ${stream.title}',
@@ -1629,11 +1680,54 @@ String _streamSummary(MediaStreamEntry stream) {
       '文件: ${stream.attachmentFileName}',
     if (stream.externalPath?.isNotEmpty == true)
       '路径: ${p.basename(stream.externalPath!)}',
-    if (stream.codec.trim().toLowerCase() == 'arib_caption') '预览: 兼容抽取',
     if (stream.isDefault) '默认',
     if (stream.isForced) '强制',
   ];
+  if (previewMode != null) {
+    parts.insert(parts.length - (stream.isForced ? 1 : 0) - (stream.isDefault ? 1 : 0), previewMode);
+  }
   return parts.join(' / ');
+}
+
+String? _previewCapabilityLabel(MediaStreamEntry stream) {
+  if (stream.kind != StreamKind.subtitle ||
+      stream.origin != StreamOrigin.input) {
+    return null;
+  }
+  final String codec = stream.codec.trim().toLowerCase();
+  if (<String>{'arib_caption'}.contains(codec)) {
+    return '预览: 兼容抽取';
+  }
+  if (<String>{
+    'ass',
+    'ssa',
+    'subrip',
+    'srt',
+    'mov_text',
+    'webvtt',
+    'text',
+    'subviewer',
+    'subviewer1',
+    'microdvd',
+    'mpl2',
+    'sami',
+    'realtext',
+    'jacosub',
+    'pjs',
+    'ttml',
+    'stl',
+    'dvd_subtitle',
+    'dvb_subtitle',
+    'dvb_teletext',
+    'hdmv_pgs_subtitle',
+    'pgssub',
+    'xsub',
+    'eia_608',
+    'eia_708',
+  }.contains(codec)) {
+    return '预览: 直通';
+  }
+  return null;
 }
 
 String _profileLabel(ExportProfile profile) {
