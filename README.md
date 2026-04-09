@@ -18,7 +18,7 @@ AEMT 是一个基于 Flutter Windows 的本地视频压制与封装工具，面�
 
 - `frontend/`: Flutter Windows 桌面应用主体
 - `scripts/`: 开发启动与便携打包脚本
-- `fonts/`: 项目使用的 MiSans 字体资源
+- `MiSans/`: 项目使用的 MiSans 字体资源
 
 ## 运行依赖
 
@@ -56,7 +56,6 @@ AEMT 会按以下顺序查找 `7z.exe`：
 
 脚本会自动：
 
-- 使用 `tools/flutter/` 下的 Flutter SDK
 - 设置 `PUB_HOSTED_URL=https://pub.flutter-io.cn`
 - 设置 `FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`
 - 以 Windows 桌面调试模式启动 AEMT
