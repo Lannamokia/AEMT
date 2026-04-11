@@ -211,6 +211,26 @@ class RuntimeDiagnostics {
     if (videoEncoders.contains('hevc_amf')) 'AMF HEVC',
   ];
 
+  List<String> get hardwareDecodeLabels => hwaccels
+      .map((String item) => item.trim().toLowerCase())
+      .where(
+      (String item) =>
+        item.isNotEmpty && item != 'hardware acceleration methods:',
+      )
+      .map((String item) => switch (item) {
+            'cuda' => 'CUDA',
+            'd3d11va' => 'D3D11VA',
+            'dxva2' => 'DXVA2',
+            'qsv' => 'QSV',
+            'amf' => 'AMF',
+            'd3d12va' => 'D3D12VA',
+            'vaapi' => 'VAAPI',
+            'opencl' => 'OpenCL',
+            'vulkan' => 'Vulkan',
+            _ => item.toUpperCase(),
+          })
+      .toList();
+
   bool get hasNvenc =>
       videoEncoders.contains('h264_nvenc') ||
       videoEncoders.contains('hevc_nvenc');
