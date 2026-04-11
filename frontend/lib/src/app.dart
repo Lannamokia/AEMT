@@ -451,6 +451,22 @@ class _Home extends StatelessWidget {
                       '编码参数',
                       '基础设置、硬件模式和高级 preset / tune。',
                       _encoding(context, media),
+                      trailing: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          OutlinedButton.icon(
+                            onPressed: controller.importEncodingSettings,
+                            icon: const Icon(Icons.upload_file_outlined),
+                            label: const Text('导入配置'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: controller.exportEncodingSettings,
+                            icon: const Icon(Icons.download_outlined),
+                            label: const Text('导出配置'),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -600,9 +616,9 @@ class _Home extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             '提示：源文件自带的内封字幕默认不会出现在预览列表里，如需预览请先到“音视频 / 字幕 / 字体流”面板手动启用对应字幕流。',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF5E6C84),
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF5E6C84)),
           ),
         ),
         const SizedBox(height: 10),
@@ -819,44 +835,70 @@ class _Home extends StatelessWidget {
                         ),
                       if (controller.compressionMode ==
                           CompressionMode.episodic)
-                        Row(
+                        Column(
                           children: <Widget>[
-                            Expanded(
-                              child: _field(
-                                '组标',
-                                controller.releaseGroup,
-                                controller.setReleaseGroup,
-                                key: 'release-group',
-                              ),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: _field(
+                                    '组标',
+                                    controller.releaseGroup,
+                                    controller.setReleaseGroup,
+                                    key: 'release-group',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 2,
+                                  child: _field(
+                                    '片名',
+                                    controller.titleOverride,
+                                    controller.setTitleOverride,
+                                    key:
+                                        'title-override-${media?.inputPath ?? 'none'}',
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 2,
-                              child: _field(
-                                '片名',
-                                controller.titleOverride,
-                                controller.setTitleOverride,
-                                key:
-                                    'title-override-${media?.inputPath ?? 'none'}',
-                              ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: _field(
+                                    '季',
+                                    controller.seasonNumber,
+                                    controller.setSeasonNumber,
+                                    key: 'season-number',
+                                    hintText: '例如 S01 / Season1 / 1',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _field(
+                                    '集',
+                                    controller.episodeNumber,
+                                    controller.setEpisodeNumber,
+                                    key: 'episode-number',
+                                    hintText: '例如 01 / EP01',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _field(
+                                    '视频源',
+                                    controller.sourceLabel,
+                                    controller.setSourceLabel,
+                                    key: 'source-label',
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _field(
-                                '正片编号',
-                                controller.episodeNumber,
-                                controller.setEpisodeNumber,
-                                key: 'episode-number',
+                            const SizedBox(height: 10),
+                            _EpisodicNamingTemplateEditor(
+                              key: ValueKey<String>(
+                                'episodic-naming-template-${media?.inputPath ?? 'none'}',
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _field(
-                                '视频源',
-                                controller.sourceLabel,
-                                controller.setSourceLabel,
-                                key: 'source-label',
-                              ),
+                              controller: controller,
                             ),
                           ],
                         ),
@@ -1557,12 +1599,14 @@ Widget _field(
   ValueChanged<String> onChanged, {
   required String key,
   String? hintText,
+  int maxLines = 1,
 }) {
   return _SyncedTextField(
     key: ValueKey<String>(key),
     label: label,
     value: value,
     hintText: hintText,
+    maxLines: maxLines,
     onChanged: onChanged,
   );
 }
@@ -1574,12 +1618,14 @@ class _SyncedTextField extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.hintText,
+    this.maxLines = 1,
   });
 
   final String label;
   final String value;
   final ValueChanged<String> onChanged;
   final String? hintText;
+  final int maxLines;
 
   @override
   State<_SyncedTextField> createState() => _SyncedTextFieldState();
@@ -1620,7 +1666,133 @@ class _SyncedTextFieldState extends State<_SyncedTextField> {
         labelText: widget.label,
         hintText: widget.hintText,
       ),
+      maxLines: widget.maxLines,
       onChanged: widget.onChanged,
+    );
+  }
+}
+
+class _EpisodicNamingTemplateEditor extends StatefulWidget {
+  const _EpisodicNamingTemplateEditor({super.key, required this.controller});
+
+  final AemtController controller;
+
+  @override
+  State<_EpisodicNamingTemplateEditor> createState() =>
+      _EpisodicNamingTemplateEditorState();
+}
+
+class _EpisodicNamingTemplateEditorState
+    extends State<_EpisodicNamingTemplateEditor> {
+  late final TextEditingController _textController;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(
+      text: widget.controller.episodicNamingTemplate,
+    );
+    _focusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EpisodicNamingTemplateEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final String nextValue = widget.controller.episodicNamingTemplate;
+    if (_textController.text == nextValue) {
+      return;
+    }
+    final int offset = _textController.selection.baseOffset.clamp(
+      0,
+      nextValue.length,
+    );
+    _textController.value = TextEditingValue(
+      text: nextValue,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _insertVariable(String variableName) {
+    final String token = '{$variableName}';
+    final TextSelection selection = _textController.selection;
+    final String currentText = _textController.text;
+    final int start = selection.isValid ? selection.start : currentText.length;
+    final int end = selection.isValid ? selection.end : currentText.length;
+    final String nextText = currentText.replaceRange(start, end, token);
+    final int nextOffset = start + token.length;
+    _textController.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+    );
+    widget.controller.setEpisodicNamingTemplate(nextText);
+    _focusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        TextFormField(
+          controller: _textController,
+          focusNode: _focusNode,
+          decoration: const InputDecoration(
+            labelText: '命名格式',
+            hintText: AemtController.defaultEpisodicNamingTemplate,
+          ),
+          maxLines: 2,
+          onChanged: widget.controller.setEpisodicNamingTemplate,
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          decoration: _softBox(),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            initiallyExpanded: false,
+            title: const Text(
+              '可用变量',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text('点击下面的变量按钮可快速插入到命名格式设置栏。'),
+            children: <Widget>[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.controller.episodicNamingVariables
+                      .map(
+                        (NamingTemplateVariable variable) => OutlinedButton(
+                          onPressed: () => _insertVariable(variable.name),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                          ),
+                          child: Text(
+                            '{${variable.name}}  ${variable.description}',
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1684,7 +1856,10 @@ String _streamSummary(MediaStreamEntry stream) {
     if (stream.isForced) '强制',
   ];
   if (previewMode != null) {
-    parts.insert(parts.length - (stream.isForced ? 1 : 0) - (stream.isDefault ? 1 : 0), previewMode);
+    parts.insert(
+      parts.length - (stream.isForced ? 1 : 0) - (stream.isDefault ? 1 : 0),
+      previewMode,
+    );
   }
   return parts.join(' / ');
 }

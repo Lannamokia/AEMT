@@ -10,6 +10,167 @@ enum CompressionMode { generic, episodic }
 
 enum HardwareMode { auto, software, nvenc, qsv, amf }
 
+T _enumByName<T extends Enum>(List<T> values, Object? rawValue, T fallback) {
+  final String value = (rawValue ?? '').toString();
+  for (final T item in values) {
+    if (item.name == value) {
+      return item;
+    }
+  }
+  return fallback;
+}
+
+class NamingTemplateVariable {
+  const NamingTemplateVariable({required this.name, required this.description});
+
+  final String name;
+  final String description;
+}
+
+class EncoderTuningSelection {
+  const EncoderTuningSelection({required this.preset, required this.tune});
+
+  final String preset;
+  final String tune;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{'preset': preset, 'tune': tune};
+  }
+
+  factory EncoderTuningSelection.fromJson(Map<String, dynamic> json) {
+    return EncoderTuningSelection(
+      preset: (json['preset'] ?? '').toString(),
+      tune: (json['tune'] ?? '').toString(),
+    );
+  }
+}
+
+class EncodingSettingsSnapshot {
+  const EncodingSettingsSnapshot({
+    required this.compressionMode,
+    required this.hardwareMode,
+    required this.outputFileNameOverride,
+    required this.releaseGroup,
+    required this.titleOverride,
+    required this.seasonNumber,
+    required this.episodeNumber,
+    required this.sourceLabel,
+    required this.episodicNamingTemplate,
+    required this.outputResolution,
+    required this.outputFps,
+    required this.outputDirectory,
+    required this.avcBitrate,
+    required this.avcMaxrate,
+    required this.hevcBitrate,
+    required this.hevcMaxrate,
+    required this.encoderTunings,
+  });
+
+  final CompressionMode compressionMode;
+  final HardwareMode hardwareMode;
+  final String outputFileNameOverride;
+  final String releaseGroup;
+  final String titleOverride;
+  final String seasonNumber;
+  final String episodeNumber;
+  final String sourceLabel;
+  final String episodicNamingTemplate;
+  final String outputResolution;
+  final String outputFps;
+  final String outputDirectory;
+  final String avcBitrate;
+  final String avcMaxrate;
+  final String hevcBitrate;
+  final String hevcMaxrate;
+  final Map<String, EncoderTuningSelection> encoderTunings;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'type': 'aemt.encoding-settings',
+      'version': 1,
+      'compressionMode': compressionMode.name,
+      'hardwareMode': hardwareMode.name,
+      'outputFileNameOverride': outputFileNameOverride,
+      'releaseGroup': releaseGroup,
+      'titleOverride': titleOverride,
+      'seasonNumber': seasonNumber,
+      'episodeNumber': episodeNumber,
+      'sourceLabel': sourceLabel,
+      'episodicNamingTemplate': episodicNamingTemplate,
+      'outputResolution': outputResolution,
+      'outputFps': outputFps,
+      'outputDirectory': outputDirectory,
+      'avcBitrate': avcBitrate,
+      'avcMaxrate': avcMaxrate,
+      'hevcBitrate': hevcBitrate,
+      'hevcMaxrate': hevcMaxrate,
+      'encoderTunings': encoderTunings.map(
+        (String key, EncoderTuningSelection value) =>
+            MapEntry(key, value.toJson()),
+      ),
+    };
+  }
+
+  factory EncodingSettingsSnapshot.fromJson(Map<String, dynamic> json) {
+    if ((json['type'] ?? '').toString() != 'aemt.encoding-settings') {
+      throw const FormatException('不是 AEMT 编码参数配置文件。');
+    }
+    final int version = json['version'] is int
+        ? json['version'] as int
+        : int.tryParse((json['version'] ?? '').toString()) ?? 0;
+    if (version != 1) {
+      throw FormatException('不支持的编码参数配置版本: $version');
+    }
+    final Map<String, dynamic> tuningJson = json['encoderTunings'] is Map
+        ? (json['encoderTunings'] as Map).map(
+            (dynamic key, dynamic value) => MapEntry(
+              key.toString(),
+              value is Map<String, dynamic>
+                  ? value
+                  : value is Map
+                  ? value.map(
+                      (dynamic innerKey, dynamic innerValue) =>
+                          MapEntry(innerKey.toString(), innerValue),
+                    )
+                  : <String, dynamic>{},
+            ),
+          )
+        : <String, dynamic>{};
+    return EncodingSettingsSnapshot(
+      compressionMode: _enumByName(
+        CompressionMode.values,
+        json['compressionMode'],
+        CompressionMode.generic,
+      ),
+      hardwareMode: _enumByName(
+        HardwareMode.values,
+        json['hardwareMode'],
+        HardwareMode.auto,
+      ),
+      outputFileNameOverride: (json['outputFileNameOverride'] ?? '').toString(),
+      releaseGroup: (json['releaseGroup'] ?? '').toString(),
+      titleOverride: (json['titleOverride'] ?? '').toString(),
+      seasonNumber: (json['seasonNumber'] ?? '').toString(),
+      episodeNumber: (json['episodeNumber'] ?? '').toString(),
+      sourceLabel: (json['sourceLabel'] ?? '').toString(),
+      episodicNamingTemplate: (json['episodicNamingTemplate'] ?? '').toString(),
+      outputResolution: (json['outputResolution'] ?? '').toString(),
+      outputFps: (json['outputFps'] ?? '').toString(),
+      outputDirectory: (json['outputDirectory'] ?? '').toString(),
+      avcBitrate: (json['avcBitrate'] ?? '').toString(),
+      avcMaxrate: (json['avcMaxrate'] ?? '').toString(),
+      hevcBitrate: (json['hevcBitrate'] ?? '').toString(),
+      hevcMaxrate: (json['hevcMaxrate'] ?? '').toString(),
+      encoderTunings: tuningJson.map(
+        (String key, dynamic value) => MapEntry(
+          key,
+          EncoderTuningSelection.fromJson(value as Map<String, dynamic>),
+        ),
+      ),
+    );
+  }
+}
+
 class RuntimeToolInfo {
   const RuntimeToolInfo({
     required this.name,
@@ -42,13 +203,13 @@ class RuntimeDiagnostics {
   final Set<String> videoEncoders;
 
   List<String> get hardwareVideoEncoderLabels => <String>[
-        if (videoEncoders.contains('h264_nvenc')) 'NVENC AVC',
-        if (videoEncoders.contains('hevc_nvenc')) 'NVENC HEVC',
-        if (videoEncoders.contains('h264_qsv')) 'QSV AVC',
-        if (videoEncoders.contains('hevc_qsv')) 'QSV HEVC',
-        if (videoEncoders.contains('h264_amf')) 'AMF AVC',
-        if (videoEncoders.contains('hevc_amf')) 'AMF HEVC',
-      ];
+    if (videoEncoders.contains('h264_nvenc')) 'NVENC AVC',
+    if (videoEncoders.contains('hevc_nvenc')) 'NVENC HEVC',
+    if (videoEncoders.contains('h264_qsv')) 'QSV AVC',
+    if (videoEncoders.contains('hevc_qsv')) 'QSV HEVC',
+    if (videoEncoders.contains('h264_amf')) 'AMF AVC',
+    if (videoEncoders.contains('hevc_amf')) 'AMF HEVC',
+  ];
 
   bool get hasNvenc =>
       videoEncoders.contains('h264_nvenc') ||
@@ -63,7 +224,11 @@ class RuntimeDiagnostics {
   static const empty = RuntimeDiagnostics(
     ffmpeg: RuntimeToolInfo(name: 'ffmpeg', path: null, required: true),
     ffprobe: RuntimeToolInfo(name: 'ffprobe', path: null, required: true),
-    mkvpropedit: RuntimeToolInfo(name: 'mkvpropedit', path: null, required: false),
+    mkvpropedit: RuntimeToolInfo(
+      name: 'mkvpropedit',
+      path: null,
+      required: false,
+    ),
     sevenZip: RuntimeToolInfo(name: '7z', path: null, required: false),
     hwaccels: <String>[],
     videoEncoders: <String>{},
@@ -116,11 +281,7 @@ class ChapterEntry {
   final Duration start;
   final Duration end;
 
-  ChapterEntry copyWith({
-    String? title,
-    Duration? start,
-    Duration? end,
-  }) {
+  ChapterEntry copyWith({String? title, Duration? start, Duration? end}) {
     return ChapterEntry(
       title: title ?? this.title,
       start: start ?? this.start,
@@ -249,10 +410,7 @@ class EncoderTuning {
   final List<String> presets;
   final List<String> tunes;
 
-  EncoderTuning copyWith({
-    String? preset,
-    String? tune,
-  }) {
+  EncoderTuning copyWith({String? preset, String? tune}) {
     return EncoderTuning(
       key: key,
       title: title,

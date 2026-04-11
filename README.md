@@ -12,7 +12,8 @@ AEMT 是一个基于 Flutter Windows 的本地视频压制与封装工具，面�
 - 导出三种目标产物：简体内嵌、繁体内嵌、简繁内封
 - 自动探测 NVENC / QSV / AMF，并按 `NVENC -> QSV -> AMF -> SOFTWARE` 顺序回落
 - 支持批量任务列表、任务日志留存、查看单任务 FFmpeg 输出
-- 按命名规则自动重命名导出文件
+- 支持分集压制命名模板，可用 `{group}`、`{title}`、`{season}`、`{episode}`、`{source}`、`{profile_tags}`、`{ext}` 等变量自由拼装导出文件名
+- 支持导入 / 导出“编码参数”选项卡中的当前配置，便于保存和迁移预设
 
 ## 项目结构
 

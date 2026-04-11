@@ -17,6 +17,34 @@ class AemtController extends ChangeNotifier {
     videoController = VideoController(player);
   }
 
+  static const String defaultEpisodicNamingTemplate =
+      '{group}{title}{season}{episode}{source}{subtitle}{profile_tags}.{ext}';
+  static final RegExp _templateVariablePattern = RegExp(r'\{([A-Za-z0-9_]+)\}');
+  static const List<NamingTemplateVariable>
+  _episodicNamingVariables = <NamingTemplateVariable>[
+    NamingTemplateVariable(name: 'group', description: '组标，自动带 []'),
+    NamingTemplateVariable(name: 'group_raw', description: '组标原文'),
+    NamingTemplateVariable(name: 'title', description: '片名'),
+    NamingTemplateVariable(name: 'season', description: '季，自动带 []'),
+    NamingTemplateVariable(name: 'season_raw', description: '季原文'),
+    NamingTemplateVariable(name: 'episode', description: '集，自动带 []'),
+    NamingTemplateVariable(name: 'episode_raw', description: '集原文'),
+    NamingTemplateVariable(name: 'source', description: '视频源，自动带 []'),
+    NamingTemplateVariable(name: 'source_raw', description: '视频源原文'),
+    NamingTemplateVariable(name: 'binding', description: '字幕标签，自动带 []'),
+    NamingTemplateVariable(name: 'binding_raw', description: '字幕标签原文'),
+    NamingTemplateVariable(name: 'subtitle', description: '字幕描述，自动带 []'),
+    NamingTemplateVariable(name: 'subtitle_raw', description: '字幕描述原文'),
+    NamingTemplateVariable(name: 'resolution', description: '分辨率标签，自动带 []'),
+    NamingTemplateVariable(name: 'resolution_raw', description: '分辨率标签原文'),
+    NamingTemplateVariable(name: 'video', description: '视频标签，自动带 []'),
+    NamingTemplateVariable(name: 'video_raw', description: '视频标签原文'),
+    NamingTemplateVariable(name: 'audio', description: '音频编码标签'),
+    NamingTemplateVariable(name: 'encode_audio', description: '编码与音频组合，自动带 []'),
+    NamingTemplateVariable(name: 'profile_tags', description: '除字幕外的默认编码标签组合'),
+    NamingTemplateVariable(name: 'ext', description: '扩展名，如 mp4 / mkv'),
+  ];
+
   final Player player = Player(
     configuration: const PlayerConfiguration(libass: true),
   );
@@ -57,8 +85,10 @@ class AemtController extends ChangeNotifier {
   String outputFileNameOverride = '';
   String releaseGroup = '';
   String titleOverride = '';
+  String seasonNumber = '';
   String episodeNumber = '';
   String sourceLabel = '';
+  String episodicNamingTemplate = defaultEpisodicNamingTemplate;
   String outputResolution = '';
   String outputFps = '';
   String avcBitrate = '2500k';
@@ -168,6 +198,9 @@ class AemtController extends ChangeNotifier {
     traditionalBinding,
     ...customBindings,
   ];
+
+  List<NamingTemplateVariable> get episodicNamingVariables =>
+      _episodicNamingVariables;
 
   Future<void> initialize() async {
     if (initializing) {
@@ -363,6 +396,64 @@ class AemtController extends ChangeNotifier {
     await refreshRuntime();
   }
 
+  Future<void> exportEncodingSettings() async {
+    try {
+      final String? path = await FilePicker.platform.saveFile(
+        dialogTitle: '导出编码参数配置',
+        fileName: 'aemt-encoding-settings.json',
+        type: FileType.custom,
+        allowedExtensions: <String>['json'],
+      );
+      if (path == null || path.isEmpty) {
+        return;
+      }
+      final String resolvedPath = p.extension(path).toLowerCase() == '.json'
+          ? path
+          : '$path.json';
+      final EncodingSettingsSnapshot snapshot =
+          _buildEncodingSettingsSnapshot();
+      final String jsonText = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(snapshot.toJson());
+      await File(resolvedPath).writeAsString('$jsonText\n');
+      statusMessage = '编码参数配置已导出到 $resolvedPath';
+    } catch (error) {
+      statusMessage = '导出编码参数配置失败: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> importEncodingSettings() async {
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: <String>['json'],
+        withData: true,
+      );
+      if (result == null) {
+        return;
+      }
+      final PlatformFile file = result.files.single;
+      final String content;
+      if (file.path != null && file.path!.isNotEmpty) {
+        content = await File(file.path!).readAsString();
+      } else if (file.bytes != null) {
+        content = utf8.decode(file.bytes!);
+      } else {
+        throw const FormatException('无法读取所选配置文件。');
+      }
+      final EncodingSettingsSnapshot snapshot =
+          EncodingSettingsSnapshot.fromJson(
+            jsonDecode(content) as Map<String, dynamic>,
+          );
+      _applyEncodingSettingsSnapshot(snapshot);
+      statusMessage = '已导入编码参数配置: ${file.name}';
+    } catch (error) {
+      statusMessage = '导入编码参数配置失败: $error';
+    }
+    notifyListeners();
+  }
+
   Future<void> togglePlayback() async {
     if (player.state.playing) {
       await player.pause();
@@ -405,6 +496,11 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSeasonNumber(String value) {
+    seasonNumber = value;
+    notifyListeners();
+  }
+
   void setEpisodeNumber(String value) {
     episodeNumber = value;
     notifyListeners();
@@ -412,6 +508,11 @@ class AemtController extends ChangeNotifier {
 
   void setSourceLabel(String value) {
     sourceLabel = value;
+    notifyListeners();
+  }
+
+  void setEpisodicNamingTemplate(String value) {
+    episodicNamingTemplate = value;
     notifyListeners();
   }
 
@@ -1108,12 +1209,21 @@ class AemtController extends ChangeNotifier {
     if (outputDirectory.isEmpty) {
       throw Exception('请先设置输出目录。');
     }
-    if (compressionMode == CompressionMode.episodic &&
-        (releaseGroup.trim().isEmpty ||
-            titleOverride.trim().isEmpty ||
-            episodeNumber.trim().isEmpty ||
-            sourceLabel.trim().isEmpty)) {
-      throw Exception('请先填写组标、片名、正片编号和视频源。');
+    if (compressionMode == CompressionMode.episodic) {
+      final String template = _resolvedEpisodicNamingTemplate;
+      if (template.isEmpty) {
+        throw Exception('请先填写命名格式。');
+      }
+      final List<String> unknownVariables = _findUnknownTemplateVariables(
+        template,
+      );
+      if (unknownVariables.isNotEmpty) {
+        throw Exception('命名格式包含未知变量: ${unknownVariables.join(', ')}');
+      }
+      final List<String> missingInputs = _findMissingTemplateInputs(template);
+      if (missingInputs.isNotEmpty) {
+        throw Exception('命名格式依赖但尚未填写的字段: ${missingInputs.join('、')}');
+      }
     }
     final ({int width, int height})? resolution = _parseResolution(
       outputResolution.trim(),
@@ -2190,42 +2300,35 @@ class AemtController extends ChangeNotifier {
     if (info == null) {
       return '';
     }
+    final String fileName;
     if (compressionMode == CompressionMode.episodic) {
-      return p.join(
-        outputDirectory,
-        _buildEpisodicFileName(info, profile, bindingKeys),
-      );
+      fileName = _buildEpisodicFileName(info, profile, bindingKeys);
+    } else {
+      final String baseName = outputFileNameOverride.isEmpty
+          ? p.basenameWithoutExtension(info.displayName)
+          : outputFileNameOverride;
+      switch (profile) {
+        case ExportProfile.hardsubMp4:
+          final String bindingLabel = _buildBindingSuffix(bindingKeys);
+          fileName = '$baseName [$bindingLabel Hardsub].mp4';
+        case ExportProfile.muxMkv:
+          final String bindingLabel = _buildBindingSuffix(bindingKeys);
+          fileName = '$baseName [$bindingLabel Mux].mkv';
+      }
     }
-    final String baseName = outputFileNameOverride.isEmpty
-        ? p.basenameWithoutExtension(info.displayName)
-        : outputFileNameOverride;
-    switch (profile) {
-      case ExportProfile.hardsubMp4:
-        final String bindingLabel = _buildBindingSuffix(bindingKeys);
-        return p.join(outputDirectory, '$baseName [$bindingLabel Hardsub].mp4');
-      case ExportProfile.muxMkv:
-        final String bindingLabel = _buildBindingSuffix(bindingKeys);
-        return p.join(outputDirectory, '$baseName [$bindingLabel Mux].mkv');
+    final String safeFileName = _sanitizeOutputFileName(fileName);
+    if (outputDirectory.trim().isEmpty) {
+      return safeFileName;
     }
+    return p.join(outputDirectory, safeFileName);
   }
 
   String _buildTaskLabel(ExportProfile profile, List<String> bindingKeys) {
-    final String suffix = profile == ExportProfile.muxMkv
-        ? '字幕内封'
-        : '${_buildBindingSuffix(bindingKeys)} 内嵌';
-    if (compressionMode == CompressionMode.episodic) {
-      final String title = titleOverride.trim().isEmpty
-          ? '未命名'
-          : titleOverride.trim();
-      final String episode = episodeNumber.trim().isEmpty
-          ? '?'
-          : episodeNumber.trim();
-      return '$title-第$episode话-$suffix';
+    final String outputPath = _buildOutputPath(profile, bindingKeys);
+    if (outputPath.trim().isNotEmpty) {
+      return p.basenameWithoutExtension(outputPath);
     }
-    final String baseName = outputFileNameOverride.trim().isEmpty
-        ? '未命名'
-        : outputFileNameOverride.trim();
-    return '$baseName-$suffix';
+    return '未命名';
   }
 
   String _buildEpisodicFileName(
@@ -2233,31 +2336,223 @@ class AemtController extends ChangeNotifier {
     ExportProfile profile,
     List<String> bindingKeys,
   ) {
-    final String group = '[${releaseGroup.trim()}]';
-    final String title = titleOverride.trim();
-    final String episode = '[${episodeNumber.trim()}]';
+    final Map<String, String> variables = _buildEpisodicNamingVariables(
+      info,
+      profile,
+      bindingKeys,
+    );
+    String fileName = _resolvedEpisodicNamingTemplate.replaceAllMapped(
+      _templateVariablePattern,
+      (Match match) => variables[match.group(1)] ?? '',
+    );
+    final String ext = variables['ext'] ?? _extensionForProfile(profile);
+    fileName = fileName.trim();
+    if (!fileName.toLowerCase().endsWith('.$ext')) {
+      fileName = '$fileName.$ext';
+    }
+    return fileName;
+  }
+
+  EncodingSettingsSnapshot _buildEncodingSettingsSnapshot() {
+    return EncodingSettingsSnapshot(
+      compressionMode: compressionMode,
+      hardwareMode: hardwareMode,
+      outputFileNameOverride: outputFileNameOverride,
+      releaseGroup: releaseGroup,
+      titleOverride: titleOverride,
+      seasonNumber: seasonNumber,
+      episodeNumber: episodeNumber,
+      sourceLabel: sourceLabel,
+      episodicNamingTemplate: _resolvedEpisodicNamingTemplate,
+      outputResolution: outputResolution,
+      outputFps: outputFps,
+      outputDirectory: outputDirectory,
+      avcBitrate: avcBitrate,
+      avcMaxrate: avcMaxrate,
+      hevcBitrate: hevcBitrate,
+      hevcMaxrate: hevcMaxrate,
+      encoderTunings: encoderTunings.map(
+        (String key, EncoderTuning tuning) => MapEntry(
+          key,
+          EncoderTuningSelection(preset: tuning.preset, tune: tuning.tune),
+        ),
+      ),
+    );
+  }
+
+  void _applyEncodingSettingsSnapshot(EncodingSettingsSnapshot snapshot) {
+    compressionMode = snapshot.compressionMode;
+    hardwareMode = snapshot.hardwareMode;
+    outputFileNameOverride = snapshot.outputFileNameOverride;
+    releaseGroup = snapshot.releaseGroup;
+    titleOverride = snapshot.titleOverride;
+    seasonNumber = snapshot.seasonNumber;
+    episodeNumber = snapshot.episodeNumber;
+    sourceLabel = snapshot.sourceLabel;
+    episodicNamingTemplate = snapshot.episodicNamingTemplate.trim().isEmpty
+        ? defaultEpisodicNamingTemplate
+        : snapshot.episodicNamingTemplate;
+    outputResolution = snapshot.outputResolution;
+    outputFps = snapshot.outputFps;
+    outputDirectory = snapshot.outputDirectory;
+    avcBitrate = snapshot.avcBitrate;
+    avcMaxrate = snapshot.avcMaxrate;
+    hevcBitrate = snapshot.hevcBitrate;
+    hevcMaxrate = snapshot.hevcMaxrate;
+    snapshot.encoderTunings.forEach((String key, EncoderTuningSelection value) {
+      final EncoderTuning? tuning = encoderTunings[key];
+      if (tuning == null) {
+        return;
+      }
+      encoderTunings[key] = tuning.copyWith(
+        preset: tuning.presets.contains(value.preset) ? value.preset : null,
+        tune: tuning.tunes.contains(value.tune) ? value.tune : null,
+      );
+    });
+  }
+
+  String get _resolvedEpisodicNamingTemplate {
+    final String template = episodicNamingTemplate.trim();
+    return template.isEmpty ? defaultEpisodicNamingTemplate : template;
+  }
+
+  List<String> _findUnknownTemplateVariables(String template) {
+    final Map<String, String> supportedVariables = _buildSupportedTemplateMap();
+    return _templateVariablePattern
+        .allMatches(template)
+        .map((Match match) => match.group(1) ?? '')
+        .where(
+          (String variable) =>
+              variable.isNotEmpty && !supportedVariables.containsKey(variable),
+        )
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  List<String> _findMissingTemplateInputs(String template) {
+    final List<String> missing = <String>[];
+    final Set<String> variables = _templateVariablePattern
+        .allMatches(template)
+        .map((Match match) => match.group(1) ?? '')
+        .where((String variable) => variable.isNotEmpty)
+        .toSet();
+    final Map<String, ({String label, String value})> requiredInputs =
+        <String, ({String label, String value})>{
+          'group': (label: '组标', value: releaseGroup.trim()),
+          'group_raw': (label: '组标', value: releaseGroup.trim()),
+          'title': (label: '片名', value: titleOverride.trim()),
+          'season': (label: '季', value: seasonNumber.trim()),
+          'season_raw': (label: '季', value: seasonNumber.trim()),
+          'episode': (label: '集', value: episodeNumber.trim()),
+          'episode_raw': (label: '集', value: episodeNumber.trim()),
+          'source': (label: '视频源', value: sourceLabel.trim()),
+          'source_raw': (label: '视频源', value: sourceLabel.trim()),
+        };
+    for (final String variable in variables) {
+      final ({String label, String value})? input = requiredInputs[variable];
+      if (input != null &&
+          input.value.isEmpty &&
+          !missing.contains(input.label)) {
+        missing.add(input.label);
+      }
+    }
+    return missing;
+  }
+
+  Map<String, String> _buildSupportedTemplateMap() {
+    return <String, String>{
+      for (final NamingTemplateVariable variable in _episodicNamingVariables)
+        variable.name: variable.description,
+    };
+  }
+
+  Map<String, String> _buildEpisodicNamingVariables(
+    MediaInfo info,
+    ExportProfile profile,
+    List<String> bindingKeys,
+  ) {
     final String resolutionTag = _buildOutputResolutionTag(
       outputResolution,
       profile,
     );
+    final Iterable<MediaStreamEntry> enabledVideos = info.streams.where(
+      (MediaStreamEntry stream) =>
+          stream.kind == StreamKind.video && stream.enabled,
+    );
+    final MediaStreamEntry namingVideoStream = enabledVideos.isNotEmpty
+        ? enabledVideos.first
+        : info.streams
+              .where(
+                (MediaStreamEntry stream) => stream.kind == StreamKind.video,
+              )
+              .first;
     final _EncoderSelection encoder = _resolveEncoder(
-      info.streams
-          .where((MediaStreamEntry stream) => stream.kind == StreamKind.video)
-          .first
-          .codec,
+      namingVideoStream.codec,
+      preferredCodecFamily: profile == ExportProfile.muxMkv ? 'hevc' : null,
     );
     final String videoTag = _buildVideoNamingTag(encoder.encoder);
+    final String bindingTag = _buildBindingSuffix(bindingKeys);
+    final String subtitleTag = profile == ExportProfile.muxMkv
+        ? _buildMuxSubtitleTag(info, bindingKeys)
+        : bindingTag;
+    final String audioTag = _buildAudioCodecTag(info);
+    final String encodeAudioRaw =
+        '$videoTag ${resolutionTag.toLowerCase()} $audioTag';
+    final String profileTags = switch (profile) {
+      ExportProfile.muxMkv => _wrapTag(encodeAudioRaw),
+      ExportProfile.hardsubMp4 =>
+        '${_wrapTag(resolutionTag)}${_wrapTag(videoTag)}',
+    };
+    return <String, String>{
+      'group_raw': releaseGroup.trim(),
+      'group': _wrapTag(releaseGroup),
+      'title': titleOverride.trim(),
+      'season_raw': seasonNumber.trim(),
+      'season': _wrapTag(seasonNumber),
+      'episode_raw': episodeNumber.trim(),
+      'episode': _wrapTag(episodeNumber),
+      'source_raw': sourceLabel.trim(),
+      'source': _wrapTag(sourceLabel),
+      'binding_raw': bindingTag,
+      'binding': _wrapTag(bindingTag),
+      'subtitle_raw': subtitleTag,
+      'subtitle': _wrapTag(subtitleTag),
+      'resolution_raw': resolutionTag,
+      'resolution': _wrapTag(resolutionTag),
+      'video_raw': videoTag,
+      'video': _wrapTag(videoTag),
+      'audio': audioTag,
+      'encode_audio': profile == ExportProfile.muxMkv
+          ? _wrapTag(encodeAudioRaw)
+          : '',
+      'profile_tags': profileTags,
+      'ext': _extensionForProfile(profile),
+    };
+  }
+
+  String _extensionForProfile(ExportProfile profile) {
     switch (profile) {
-      case ExportProfile.muxMkv:
-        final String source = '[${sourceLabel.trim()}]';
-        final String encodeAndAudio =
-            '[$videoTag ${resolutionTag.toLowerCase()} ${_buildAudioCodecTag(info)}]';
-        final String subtitleTag =
-            '[${_buildMuxSubtitleTag(info, bindingKeys)}]';
-        return '$group$title$episode$source$encodeAndAudio$subtitleTag.mkv';
       case ExportProfile.hardsubMp4:
-        return '$group$title$episode[${_buildBindingSuffix(bindingKeys)}][$resolutionTag][$videoTag].mp4';
+        return 'mp4';
+      case ExportProfile.muxMkv:
+        return 'mkv';
     }
+  }
+
+  String _wrapTag(String value) {
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    return '[$trimmed]';
+  }
+
+  String _sanitizeOutputFileName(String fileName) {
+    String sanitized = fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+    sanitized = sanitized.replaceAll(RegExp(r'\s+'), ' ').trim();
+    sanitized = sanitized.replaceAll(RegExp(r'[. ]+$'), '');
+    return sanitized.isEmpty ? 'untitled' : sanitized;
   }
 
   String _buildOutputResolutionTag(String resolution, ExportProfile profile) {
