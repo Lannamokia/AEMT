@@ -42,9 +42,12 @@ TtxModifyResult modifyTtxXml(
   required String originalFontPath,
   bool sourceHanEllipsisFix = true,
 }) {
-  final XmlDocument document = XmlDocument.parse(xmlText.replaceAll('\x00', ''));
-  final Iterable<XmlElement> nameRecords = document
-      .findAllElements('namerecord');
+  final XmlDocument document = XmlDocument.parse(
+    xmlText.replaceAll('\x00', ''),
+  );
+  final Iterable<XmlElement> nameRecords = document.findAllElements(
+    'namerecord',
+  );
   var renamedCount = 0;
   var isSourceHan = false;
   for (final XmlElement record in nameRecords) {
@@ -74,6 +77,7 @@ TtxModifyResult modifyTtxXml(
   if (renamedCount == 0) {
     throw Exception('$originalFontPath: $kFontForgeAdvice');
   }
+  _ensureCompilableCmap(document);
   final int removed = sourceHanEllipsisFix && isSourceHan
       ? _applySourceHanEllipsisFix(document)
       : 0;
@@ -83,6 +87,34 @@ TtxModifyResult modifyTtxXml(
     renamedNameRecordCount: renamedCount,
     removedEllipsisSubstitutions: removed,
   );
+}
+
+void _ensureCompilableCmap(XmlDocument document) {
+  final XmlElement? cmap = _firstOrNull(document.findAllElements('cmap'));
+  if (cmap == null) {
+    return;
+  }
+  final bool hasCmapSubtable = cmap.children.whereType<XmlElement>().any(
+    (XmlElement child) => child.name.local.startsWith('cmap_format_'),
+  );
+  if (hasCmapSubtable) {
+    return;
+  }
+  cmap.children
+    ..add(
+      XmlElement(XmlName('cmap_format_4'), <XmlAttribute>[
+        XmlAttribute(XmlName('platformID'), '0'),
+        XmlAttribute(XmlName('platEncID'), '3'),
+        XmlAttribute(XmlName('language'), '0'),
+      ]),
+    )
+    ..add(
+      XmlElement(XmlName('cmap_format_4'), <XmlAttribute>[
+        XmlAttribute(XmlName('platformID'), '3'),
+        XmlAttribute(XmlName('platEncID'), '1'),
+        XmlAttribute(XmlName('language'), '0'),
+      ]),
+    );
 }
 
 void _replaceText(XmlElement element, String text) {
@@ -95,7 +127,9 @@ void _appendNameId0IfMissing(
   String aemtVersion,
   String? fontToolsVersion,
 ) {
-  final XmlElement? nameElement = _firstOrNull(document.findAllElements('name'));
+  final XmlElement? nameElement = _firstOrNull(
+    document.findAllElements('name'),
+  );
   if (nameElement == null) {
     return;
   }
@@ -127,7 +161,9 @@ int _applySourceHanEllipsisFix(XmlDocument document) {
   final XmlElement? ellipsisMap = _firstOrNull(
     document
         .findAllElements('map')
-        .where((XmlElement element) => element.getAttribute('code') == '0x2026'),
+        .where(
+          (XmlElement element) => element.getAttribute('code') == '0x2026',
+        ),
   );
   final String? ellipsisCid = ellipsisMap?.getAttribute('name');
   if (ellipsisCid == null || ellipsisCid.isEmpty) {

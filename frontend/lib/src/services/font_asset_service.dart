@@ -40,9 +40,9 @@ class FontAssetService {
         result.addAll(
           await _enrichFont(
             ResolvedFontFile(
-            path: source,
-            fileName: p.basename(source),
-            mimeType: mimeTypeForFont(source),
+              path: source,
+              fileName: p.basename(source),
+              mimeType: mimeTypeForFont(source),
               source: FontSourceKind.imported,
               importOrder: result.length,
             ),
@@ -64,9 +64,9 @@ class FontAssetService {
           result.addAll(
             await _enrichFont(
               ResolvedFontFile(
-              path: outPath,
-              fileName: p.basename(outPath),
-              mimeType: mimeTypeForFont(outPath),
+                path: outPath,
+                fileName: p.basename(outPath),
+                mimeType: mimeTypeForFont(outPath),
                 source: FontSourceKind.imported,
                 importOrder: result.length,
               ),
@@ -98,9 +98,9 @@ class FontAssetService {
             result.addAll(
               await _enrichFont(
                 ResolvedFontFile(
-                path: file.path,
-                fileName: p.basename(file.path),
-                mimeType: mimeTypeForFont(file.path),
+                  path: file.path,
+                  fileName: p.basename(file.path),
+                  mimeType: mimeTypeForFont(file.path),
                   source: FontSourceKind.imported,
                   importOrder: result.length,
                 ),
@@ -208,12 +208,15 @@ class FontAssetService {
               entry.key: <int>{...entry.value},
           });
         for (final MapEntry<String, Set<int>> entry in parsed.entries) {
-          nextAggregate.putIfAbsent(entry.key, () => <int>{}).addAll(entry.value);
+          nextAggregate
+              .putIfAbsent(entry.key, () => <int>{})
+              .addAll(entry.value);
         }
         aggregate
           ..clear()
           ..addAll({
-            for (final MapEntry<String, Set<int>> entry in nextAggregate.entries)
+            for (final MapEntry<String, Set<int>> entry
+                in nextAggregate.entries)
               entry.key: entry.value,
           });
       } catch (error) {
@@ -333,10 +336,9 @@ class FontAssetService {
   }) async {
     await Directory(plan.subsetDir).create(recursive: true);
     await _appendLicenseSidecar(plan);
-    await File(plan.codepointsFilePath).writeAsString(
-      String.fromCharCodes(plan.codepoints),
-      encoding: utf8,
-    );
+    await File(
+      plan.codepointsFilePath,
+    ).writeAsString(_formatUnicodeFile(plan.codepoints), encoding: utf8);
     await _runProcessOrThrow(
       plan.pyftsubsetPath,
       plan.pyftsubsetArguments,
@@ -373,10 +375,10 @@ class FontAssetService {
       throw Exception('${plan.originalFont.path}: $kFontForgeAdvice');
     }
     if (plan.verifyAfterSubset) {
-      final Set<int> cmap = await readSfntFontFaces(plan.outputFont.path)
-          .then((List<SfntFontFace> faces) => faces
-              .expand((SfntFontFace face) => face.cmapCodepoints)
-              .toSet());
+      final Set<int> cmap = await readSfntFontFaces(plan.outputFont.path).then(
+        (List<SfntFontFace> faces) =>
+            faces.expand((SfntFontFace face) => face.cmapCodepoints).toSet(),
+      );
       final Set<int> missing = plan.codepoints
           .where((int codepoint) => !cmap.contains(codepoint))
           .toSet();
@@ -387,14 +389,22 @@ class FontAssetService {
       }
     }
     return (
-      verifyLogLine:
-          plan.verifyAfterSubset
-              ? 'subset OK: ${plan.originalFont.fileName} (${plan.codepoints.length})'
-              : '子集化校验已跳过',
+      verifyLogLine: plan.verifyAfterSubset
+          ? 'subset OK: ${plan.originalFont.fileName} (${plan.codepoints.length})'
+          : '子集化校验已跳过',
       fsTypeWarning: plan.fsTypeRestricted
           ? '字体 ${plan.originalFont.fileName} 标记为受限嵌入...'
           : null,
     );
+  }
+
+  String _formatUnicodeFile(List<int> codepoints) {
+    return codepoints
+        .map(
+          (int codepoint) =>
+              'U+${codepoint.toRadixString(16).toUpperCase().padLeft(4, '0')}',
+        )
+        .join('\n');
   }
 
   Future<void> _appendLicenseSidecar(FontSubsetStepPlan plan) async {
@@ -474,7 +484,9 @@ class FontAssetService {
     final StreamSubscription<List<int>> stderrSub = process.stderr.listen(
       stderrBytes.addAll,
     );
-    final StreamSubscription<List<int>> stdoutSub = process.stdout.listen((_) {});
+    final StreamSubscription<List<int>> stdoutSub = process.stdout.listen(
+      (_) {},
+    );
     final int exitCode = await process.exitCode;
     await cancelSub.cancel();
     await stdoutSub.cancel();
@@ -723,10 +735,7 @@ class FontAssetService {
   }
 
   String _decodeSubtitleBytes(Uint8List raw) {
-    if (raw.length >= 3 &&
-        raw[0] == 0xEF &&
-        raw[1] == 0xBB &&
-        raw[2] == 0xBF) {
+    if (raw.length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) {
       return utf8.decode(raw.sublist(3), allowMalformed: true);
     }
     if (raw.length >= 2 && raw[0] == 0xFF && raw[1] == 0xFE) {

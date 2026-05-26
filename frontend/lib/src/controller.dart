@@ -425,6 +425,9 @@ class AemtController extends ChangeNotifier {
 
   void setHardwareMode(HardwareMode value) {
     hardwareMode = value;
+    for (final String encoderKey in kSupportedRcModes.keys) {
+      reconcileVideoEncodingMode(encoderKey);
+    }
     notifyListeners();
   }
 

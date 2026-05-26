@@ -48,6 +48,8 @@ void main() {
     expect(plan.ttxCompileArguments, <String>[
       '-f',
       '-b',
+      '-o',
+      'C:/work\\subsetted\\Example.subset.ttf',
       'C:/work\\subsetted\\Example.ttx',
     ]);
     expect(plan.outputFont.fileName, 'Example.ttf');

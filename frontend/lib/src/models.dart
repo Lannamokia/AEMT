@@ -896,7 +896,7 @@ class FontSubsetStepPlan {
   }
 
   List<String> get ttxCompileArguments {
-    return <String>['-f', '-b', ttxXmlPath];
+    return <String>['-f', '-b', '-o', outputFont.path, ttxXmlPath];
   }
 }
 

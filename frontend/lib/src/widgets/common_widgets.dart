@@ -155,6 +155,7 @@ Widget buildField(
   required String key,
   String? hintText,
   int maxLines = 1,
+  bool enabled = true,
 }) {
   return SyncedTextField(
     key: ValueKey<String>(key),
@@ -162,6 +163,7 @@ Widget buildField(
     value: value,
     hintText: hintText,
     maxLines: maxLines,
+    enabled: enabled,
     onChanged: onChanged,
   );
 }
@@ -174,6 +176,7 @@ class SyncedTextField extends StatefulWidget {
     required this.onChanged,
     this.hintText,
     this.maxLines = 1,
+    this.enabled = true,
   });
 
   final String label;
@@ -181,6 +184,7 @@ class SyncedTextField extends StatefulWidget {
   final ValueChanged<String> onChanged;
   final String? hintText;
   final int maxLines;
+  final bool enabled;
 
   @override
   State<SyncedTextField> createState() => _SyncedTextFieldState();
@@ -221,6 +225,7 @@ class _SyncedTextFieldState extends State<SyncedTextField> {
         labelText: widget.label,
         hintText: widget.hintText,
       ),
+      enabled: widget.enabled,
       maxLines: widget.maxLines,
       onChanged: widget.onChanged,
     );

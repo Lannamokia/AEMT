@@ -117,7 +117,7 @@ design 中编号独立成子任务，方便逐条追溯。
       Dolby Vision / missing-field cases
     - _Requirements: 25.1, 25.2, 25.3, 25.5_
 
-- [ ] 4. Checkpoint - models + runtime discovery green
+- [x] 4. Checkpoint - models + runtime discovery green
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 5. 字体服务：字符索引（`frontend/lib/src/services/font_asset_service.dart`）
@@ -187,7 +187,7 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 10: Font matching is case-insensitive and source-prioritized**
     - **Validates: Requirements 11.1, 11.3, 11.4, 11.7**
 
-- [ ] 7. 字体服务：子集化执行
+- [x] 7. 字体服务：子集化执行
   - [x] 7.1 Implement `subsetFonts(index, matched, workDir, ...)`
     returning `SubsetResult { fonts, renameMap }`
     - Signature additions: `pyftsubsetPath`, `ttxPath`,
@@ -287,12 +287,12 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 12: pyftsubset command construction**
     - **Validates: Requirements 14.1, 14.2, 14.3, 18.1**
 
-  - [ ] 7.7 Write integration property test for subset round-trip
+  - [x] 7.7 Write integration property test for subset round-trip
     - **Property 13: Subsetting preserves required codepoints**
     - **Validates: Requirements 17.1, 17.2**
     - Requires real `pyftsubset.exe` (gated by CI env)
 
-  - [ ] 7.8 Write integration test for empty-codepoint subset file
+  - [x] 7.8 Write integration test for empty-codepoint subset file
     - **Property 14: Empty codepoint set still yields a valid subset file**
     - **Validates: Requirements 14.4, 14.6**
 
@@ -349,7 +349,7 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 28: Vert_Mapping_Table application is idempotent**
     - **Validates: Requirements 10.7, 10.8, 10.9**
 
-- [ ] 9. Checkpoint - font service end-to-end
+- [x] 9. Checkpoint - font service end-to-end
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 10. Snapshot v2（`frontend/lib/src/controller_export_config.dart`）
@@ -613,8 +613,8 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 23: Cancellation terminates pyftsubset promptly**
     - **Validates: Requirements 20.5**
 
-- [ ] 18. UI: 视频码控扩展（`frontend/lib/src/widgets/encoding_panel.dart`）
-  - [ ] 18.1 Add `视频码控模式` dropdown into existing
+- [x] 18. UI: 视频码控扩展（`frontend/lib/src/widgets/encoding_panel.dart`）
+  - [x] 18.1 Add `视频码控模式` dropdown into existing
     `高级编码参数（视频）` Tab
     - Candidates dynamically restricted by `Video_Encoder_Family`
       via `kSupportedRcModes`
@@ -626,8 +626,8 @@ design 中编号独立成子任务，方便逐条追溯。
       hardware mode / encoder family changes
     - _Requirements: 7.1, 7.2, 7.3, 7.8_
 
-- [ ] 19. UI: 音频参数 Tab（`Audio_Settings_Tab`）
-  - [ ] 19.1 Add `音频参数` Tab after existing tabs
+- [x] 19. UI: 音频参数 Tab（`Audio_Settings_Tab`）
+  - [x] 19.1 Add `音频参数` Tab after existing tabs
     - `mediaInfo == null` → `请先导入视频。`; otherwise per-stream
       `ExpansionTile` with header `index / codec / language / title`
     - `enabled=false` streams: red `已禁用` badge, all controls
@@ -647,14 +647,14 @@ design 中编号独立成子任务，方便逐条追溯。
       2.5, 2.6, 2.7, 2.8, 3.1, 3.6, 4.1, 4.4, 4.6, 5.1, 5.3, 5.5,
       5.7, 6.1, 6.2, 6.3_
 
-  - [ ] 19.2 Write widget tests for `Audio_Settings_Tab`
+  - [x] 19.2 Write widget tests for `Audio_Settings_Tab`
     - Empty mediaInfo placeholder
     - Disabled-stream visual state
     - Encoder switch hides/shows correct fields
     - _Requirements: 1.2, 1.4, 2.2, 2.6_
 
-- [ ] 20. UI: 字体处理 Tab（`Font_Settings_Tab`）
-  - [ ] 20.1 Add `字体处理` Tab with two switches
+- [x] 20. UI: 字体处理 Tab（`Font_Settings_Tab`）
+  - [x] 20.1 Add `字体处理` Tab with two switches
     - `SwitchListTile` "缺失字体时仍继续导出", default false,
       bound to `controller.continueOnMissingFont`
     - Helper line: `默认关闭。开启后字幕字体匹配失败时不再终止任务，
@@ -665,12 +665,12 @@ design 中编号独立成子任务，方便逐条追溯。
       字幕中省略号居中显示。仅对识别为 Source Han 系列的字体生效。`
     - _Requirements: 12.1, 12.2, 12.5, 12.6, 28.4_
 
-  - [ ] 20.2 Write widget tests for `Font_Settings_Tab`
+  - [x] 20.2 Write widget tests for `Font_Settings_Tab`
     - Default off / on respectively; toggling persists into snapshot
     - _Requirements: 12.2, 12.5, 28.4_
 
-- [ ] 21. UI: 色调映射 Tab（`Tone_Mapping_Tab`）
-  - [ ] 21.1 Build `Tone_Mapping_Tab` layout
+- [x] 21. UI: 色调映射 Tab（`Tone_Mapping_Tab`）
+  - [x] 21.1 Build `Tone_Mapping_Tab` layout
     - `mediaInfo == null` → `请先导入视频。`
     - `源色彩特性` read-only card (9 fields) + colored
       `Source_Color_Class` chip
@@ -684,12 +684,12 @@ design 中编号独立成子任务，方便逐条追溯。
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 23.1, 23.2, 23.3,
       23.4, 24.1, 26.3, 26.5, 27.2_
 
-  - [ ] 21.2 Write widget tests for `Tone_Mapping_Tab`
+  - [x] 21.2 Write widget tests for `Tone_Mapping_Tab`
     - HDR source shows recommendation; SDR_BT709 shows passthrough
       hint; zscale-missing banner disables controls
     - _Requirements: 21.4, 23.4, 26.3_
 
-- [ ] 22. Final checkpoint - 全部测试通过
+- [x] 22. Final checkpoint - 全部测试通过
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
