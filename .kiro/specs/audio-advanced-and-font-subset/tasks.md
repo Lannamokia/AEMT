@@ -120,8 +120,8 @@ design 中编号独立成子任务，方便逐条追溯。
 - [ ] 4. Checkpoint - models + runtime discovery green
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. 字体服务：字符索引（`frontend/lib/src/services/font_asset_service.dart`）
-  - [ ] 5.1 Implement `indexSubtitleCharacters(List<String>)`
+- [x] 5. 字体服务：字符索引（`frontend/lib/src/services/font_asset_service.dart`）
+  - [x] 5.1 Implement `indexSubtitleCharacters(List<String>)`
     - `.ass`/`.ssa`: parse `[V4+ Styles]` Format/Fontname, resolve
       Dialogue style and `\fn<name>` inline overrides; ignore other
       `{...}` override-tag content
@@ -150,24 +150,24 @@ design 中编号独立成子任务，方便逐条追溯。
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8,
       10.9, 11.7_
 
-  - [ ] 5.2 Write property test for character-index coverage
+  - [x] 5.2 Write property test for character-index coverage
     - **Property 9: Subtitle character index covers visible text**
     - **Validates: Requirements 10.2, 10.3, 10.4, 10.5**
 
-  - [ ] 5.3 Write unit tests for subtitle-parser error paths
+  - [x] 5.3 Write unit tests for subtitle-parser error paths
     - Read failure / undecodable bytes raise `Exception` with path,
       partial index untouched
     - _Requirements: 10.6, 20.3_
 
-- [ ] 6. 字体服务：sfnt name 表读取与匹配
-  - [ ] 6.1 Implement minimal sfnt `name`-table reader
+- [x] 6. 字体服务：sfnt name 表读取与匹配
+  - [x] 6.1 Implement minimal sfnt `name`-table reader
     - New helper `services/font_asset_service_internal/sfnt_name_reader.dart`
     - Read NameID 1 (Family) + NameID 4 (Full); `.ttc` treated as
       union of internal faces
     - Pure Dart, no external process
     - _Requirements: 11.1_
 
-  - [ ] 6.2 Implement `matchFonts(SubtitleCharIndex, candidates)`
+  - [x] 6.2 Implement `matchFonts(SubtitleCharIndex, candidates)`
     - Case-insensitive + trimmed key normalization
     - Source priority: source-file attachments > imported sources
       (in import order); ties resolve to earlier index
@@ -183,7 +183,7 @@ design 中编号独立成子任务，方便逐条追溯。
       comment + assertion
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.8_
 
-  - [ ] 6.3 Write property test for font matching
+  - [x] 6.3 Write property test for font matching
     - **Property 10: Font matching is case-insensitive and source-prioritized**
     - **Validates: Requirements 11.1, 11.3, 11.4, 11.7**
 
@@ -245,7 +245,7 @@ design 中编号独立成子任务，方便逐条追溯。
       `字体 <name> 标记为受限嵌入...` warning to log without aborting
     - _Requirements: 18.1, 18.2, 18.3_
 
-  - [ ] 7.4 Implement `ttx_xml_modifier.dart` (in-memory TTX edits)
+  - [x] 7.4 Implement `ttx_xml_modifier.dart` (in-memory TTX edits)
     - New helper
       `services/font_asset_service_internal/ttx_xml_modifier.dart`,
       pure Dart on `package:xml`, no external process
@@ -271,7 +271,7 @@ design 中编号独立成子任务，方便逐条追溯。
       original font path); never emit a non-renamed subset font
     - _Requirements: 28.2, 28.3, 28.4, 28.5, 28.6, 28.8_
 
-  - [ ] 7.5 Implement Font_Random_Rename generator
+  - [x] 7.5 Implement Font_Random_Rename generator
     - Co-located with `ttx_xml_modifier.dart` (or a dedicated
       `font_random_name.dart`); pure function exposed as
       `String generateRandomName(Set<String> usedNames)`
@@ -300,8 +300,8 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 22: License sidecar generation**
     - **Validates: Requirements 18.2, 18.3**
 
-- [ ] 8. 字幕字体名重写（Subset_Rewrite_Ass）
-  - [ ] 8.1 Implement
+- [x] 8. 字幕字体名重写（Subset_Rewrite_Ass）
+  - [x] 8.1 Implement
     `services/font_asset_service_internal/subset_ass_rewriter.dart`
     - Pure Dart, no external process
     - Inputs: original ASS/SSA path,
@@ -329,23 +329,23 @@ design 中编号独立成子任务，方便逐条追溯。
       before invocation
     - _Requirements: 29.1, 29.2, 29.3, 29.7_
 
-  - [ ] 8.2 Write property test for `subset_ass_rewriter`
+  - [x] 8.2 Write property test for `subset_ass_rewriter`
     - **Property 26: Subset_Rewrite_Ass faithfully applies renameMap**
     - **Validates: Requirements 29.1, 29.2, 29.3, 29.4, 29.5, 29.7**
 
-  - [ ] 8.3 Write property test for skip-path semantics
+  - [x] 8.3 Write property test for skip-path semantics
     - **Property 27: Subset_Rewrite_Ass skip-path leaves originals untouched**
     - **Validates: Requirements 13.5, 29.6**
 
-  - [ ] 8.4 Write property test for TTX_Pipeline NameID renaming
+  - [x] 8.4 Write property test for TTX_Pipeline NameID renaming
     - **Property 24: TTX_Pipeline produces a uniquely renamed font**
     - **Validates: Requirements 28.1, 28.2, 18.5**
 
-  - [ ] 8.5 Write property test for Source Han ellipsis fix
+  - [x] 8.5 Write property test for Source Han ellipsis fix
     - **Property 25: Source Han ellipsis fix removes only cid6* substitutions**
     - **Validates: Requirements 28.3, 28.5, 28.6**
 
-  - [ ] 8.6 Write property test for Vert_Mapping_Table + bucket merge
+  - [x] 8.6 Write property test for Vert_Mapping_Table + bucket merge
     - **Property 28: Vert_Mapping_Table application is idempotent**
     - **Validates: Requirements 10.7, 10.8, 10.9**
 

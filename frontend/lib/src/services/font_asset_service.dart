@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
@@ -7,6 +8,8 @@ import 'package:path/path.dart' as p;
 
 import '../models.dart';
 import '../utils/export_utils.dart';
+import 'font_asset_service_internal/sfnt_name_reader.dart';
+import 'font_asset_service_internal/vert_mapping.dart';
 
 class FontAssetService {
   const FontAssetService({
@@ -17,6 +20,13 @@ class FontAssetService {
   final String? ffmpegPath;
   final String? sevenZipPath;
 
+  static String normalizeFontName(String value) {
+    final String trimmed = value.trim();
+    return (trimmed.startsWith('@') ? trimmed.substring(1) : trimmed)
+        .trim()
+        .toLowerCase();
+  }
+
   Future<List<ResolvedFontFile>> resolveFontFiles(
     List<String> importedFontSources,
     String tempDir,
@@ -25,11 +35,15 @@ class FontAssetService {
     for (final String source in importedFontSources) {
       final String extension = p.extension(source).toLowerCase();
       if (<String>{'.ttf', '.otf', '.ttc'}.contains(extension)) {
-        result.add(
-          ResolvedFontFile(
+        result.addAll(
+          await _enrichFont(
+            ResolvedFontFile(
             path: source,
             fileName: p.basename(source),
             mimeType: mimeTypeForFont(source),
+              source: FontSourceKind.imported,
+              importOrder: result.length,
+            ),
           ),
         );
         continue;
@@ -45,11 +59,15 @@ class FontAssetService {
           final OutputFileStream output = OutputFileStream(outPath);
           file.writeContent(output);
           output.close();
-          result.add(
-            ResolvedFontFile(
+          result.addAll(
+            await _enrichFont(
+              ResolvedFontFile(
               path: outPath,
               fileName: p.basename(outPath),
               mimeType: mimeTypeForFont(outPath),
+                source: FontSourceKind.imported,
+                importOrder: result.length,
+              ),
             ),
           );
         }
@@ -75,11 +93,15 @@ class FontAssetService {
         ).listSync(recursive: true);
         for (final File file in entries.whereType<File>()) {
           if (isFontFile(file.path)) {
-            result.add(
-              ResolvedFontFile(
+            result.addAll(
+              await _enrichFont(
+                ResolvedFontFile(
                 path: file.path,
                 fileName: p.basename(file.path),
                 mimeType: mimeTypeForFont(file.path),
+                  source: FontSourceKind.imported,
+                  importOrder: result.length,
+                ),
               ),
             );
           }
@@ -130,15 +152,18 @@ class FontAssetService {
         outDir,
         '${attachmentStreamIndex}_$fileName',
       );
-      result.add(
+      final List<ResolvedFontFile> enriched = await _enrichFont(
         ResolvedFontFile(
           path: outPath,
           fileName: fileName,
           mimeType: attachment.attachmentMimeType?.trim().isNotEmpty == true
               ? attachment.attachmentMimeType!.trim()
               : mimeTypeForAttachment(attachment),
+          source: FontSourceKind.attachment,
+          importOrder: result.length,
         ),
       );
+      result.addAll(enriched);
       args.addAll(<String>[
         '-dump_attachment:t:$attachmentStreamIndex',
         outPath,
@@ -162,6 +187,337 @@ class FontAssetService {
       }
     }
     return result;
+  }
+
+  Future<SubtitleCharIndex> indexSubtitleCharacters(
+    List<String> subtitlePaths,
+  ) async {
+    final Map<String, Set<int>> aggregate = <String, Set<int>>{};
+    final Map<String, Set<int>> nextAggregate = <String, Set<int>>{};
+    for (final String subtitlePath in subtitlePaths) {
+      try {
+        final Map<String, Set<int>> parsed = await _indexOneSubtitle(
+          subtitlePath,
+        );
+        nextAggregate
+          ..clear()
+          ..addAll({
+            for (final MapEntry<String, Set<int>> entry in aggregate.entries)
+              entry.key: <int>{...entry.value},
+          });
+        for (final MapEntry<String, Set<int>> entry in parsed.entries) {
+          nextAggregate.putIfAbsent(entry.key, () => <int>{}).addAll(entry.value);
+        }
+        aggregate
+          ..clear()
+          ..addAll({
+            for (final MapEntry<String, Set<int>> entry in nextAggregate.entries)
+              entry.key: entry.value,
+          });
+      } catch (error) {
+        throw Exception('无法解析字幕: $subtitlePath: $error');
+      }
+    }
+    for (final Set<int> codepoints in aggregate.values) {
+      _appendNecessaryCodepoints(codepoints);
+    }
+    return SubtitleCharIndex(aggregate);
+  }
+
+  FontMatchResult matchFonts(
+    SubtitleCharIndex index,
+    List<ResolvedFontFile> candidates,
+  ) {
+    _throwOnDuplicateFonts(candidates);
+    final Map<String, ResolvedFontFile> matched = <String, ResolvedFontFile>{};
+    final Set<String> missing = <String>{};
+    final List<ResolvedFontFile> ordered = <ResolvedFontFile>[...candidates]
+      ..sort((ResolvedFontFile a, ResolvedFontFile b) {
+        if (a.source != b.source) {
+          return a.source == FontSourceKind.attachment ? -1 : 1;
+        }
+        return a.importOrder.compareTo(b.importOrder);
+      });
+    for (final String fontName in index.codepointsByFontname.keys) {
+      final String key = normalizeFontName(fontName);
+      ResolvedFontFile? selected;
+      for (final ResolvedFontFile candidate in ordered) {
+        final Set<String> names = <String>{
+          ...candidate.familyNames,
+          ...candidate.fullNames,
+        }.map(normalizeFontName).toSet();
+        if (names.contains(key)) {
+          selected = candidate;
+          break;
+        }
+      }
+      if (selected == null) {
+        missing.add(fontName);
+      } else {
+        matched[key] = selected;
+      }
+    }
+    return FontMatchResult(matched: matched, missing: missing);
+  }
+
+  Future<List<ResolvedFontFile>> _enrichFont(ResolvedFontFile file) async {
+    if (p.basename(file.path).toLowerCase().contains('misans')) {
+      assert(false, 'MiSans must never enter subtitle font candidates.');
+      return <ResolvedFontFile>[];
+    }
+    try {
+      return await enrichResolvedFontFile(file);
+    } catch (_) {
+      return <ResolvedFontFile>[file];
+    }
+  }
+
+  Future<Map<String, Set<int>>> _indexOneSubtitle(String path) async {
+    final Uint8List bytes = await File(path).readAsBytes();
+    final String text = _decodeSubtitleBytes(bytes);
+    final String extension = p.extension(path).toLowerCase();
+    if (extension == '.ass' || extension == '.ssa') {
+      return _indexAssText(text);
+    }
+    return <String, Set<int>>{'__default__': _visibleCodepoints(text)};
+  }
+
+  Map<String, Set<int>> _indexAssText(String text) {
+    final List<String> lines = text.split(RegExp(r'\r\n|\n'));
+    final Map<String, String> styleFonts = <String, String>{};
+    final Map<String, Set<int>> result = <String, Set<int>>{};
+    var section = '';
+    List<String> styleFormat = <String>[];
+    List<String> eventFormat = <String>[];
+    for (final String line in lines) {
+      final String trimmed = line.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        section = trimmed.toLowerCase();
+        continue;
+      }
+      if ((section == '[v4+ styles]' || section == '[v4 styles]') &&
+          trimmed.toLowerCase().startsWith('format:')) {
+        styleFormat = _parseFormat(line);
+        continue;
+      }
+      if ((section == '[v4+ styles]' || section == '[v4 styles]') &&
+          trimmed.toLowerCase().startsWith('style:')) {
+        final List<String> fields = _splitAssLine(line, styleFormat.length);
+        final int nameIndex = styleFormat.indexOf('name');
+        final int fontIndex = styleFormat.indexOf('fontname');
+        if (nameIndex != -1 &&
+            fontIndex != -1 &&
+            nameIndex < fields.length &&
+            fontIndex < fields.length) {
+          styleFonts[fields[nameIndex].trim()] = fields[fontIndex].trim();
+        }
+        continue;
+      }
+      if (section == '[events]' &&
+          trimmed.toLowerCase().startsWith('format:')) {
+        eventFormat = _parseFormat(line);
+        continue;
+      }
+      if (section == '[events]' &&
+          trimmed.toLowerCase().startsWith('dialogue:')) {
+        final List<String> fields = _splitAssLine(line, eventFormat.length);
+        final int styleIndex = eventFormat.indexOf('style');
+        final int textIndex = eventFormat.indexOf('text');
+        if (styleIndex == -1 ||
+            textIndex == -1 ||
+            styleIndex >= fields.length ||
+            textIndex >= fields.length) {
+          continue;
+        }
+        final String defaultFont =
+            styleFonts[fields[styleIndex].trim()] ?? '__default__';
+        _indexAssDialogueText(fields[textIndex], defaultFont, result);
+      }
+    }
+    return result;
+  }
+
+  void _indexAssDialogueText(
+    String text,
+    String defaultFont,
+    Map<String, Set<int>> result,
+  ) {
+    String currentFont = defaultFont;
+    var index = 0;
+    while (index < text.length) {
+      final int open = text.indexOf('{', index);
+      if (open == -1) {
+        _addTextCodepoints(result, currentFont, text.substring(index));
+        break;
+      }
+      _addTextCodepoints(result, currentFont, text.substring(index, open));
+      final int close = text.indexOf('}', open + 1);
+      if (close == -1) {
+        break;
+      }
+      final String? overrideFont = _extractLastFontOverride(
+        text.substring(open + 1, close),
+      );
+      if (overrideFont != null) {
+        currentFont = overrideFont;
+      }
+      index = close + 1;
+    }
+  }
+
+  String? _extractLastFontOverride(String block) {
+    String? result;
+    var index = 0;
+    while (index < block.length) {
+      final int tag = block.indexOf(r'\fn', index);
+      if (tag == -1) {
+        break;
+      }
+      final int start = tag + 3;
+      var end = start;
+      while (end < block.length && block[end] != r'\') {
+        end++;
+      }
+      result = block.substring(start, end).trim();
+      index = end;
+    }
+    return result == null || result.isEmpty ? null : result;
+  }
+
+  void _addTextCodepoints(
+    Map<String, Set<int>> result,
+    String fontName,
+    String text,
+  ) {
+    final String normalized = normalizeFontName(fontName);
+    final bool vertical = fontName.trimLeft().startsWith('@');
+    final Set<int> target = result.putIfAbsent(normalized, () => <int>{});
+    for (final int codepoint in text.runes) {
+      target.add(codepoint);
+      if (vertical) {
+        final int? mapped = kVertMappingTable[codepoint];
+        if (mapped != null) {
+          target.add(mapped);
+        }
+      }
+    }
+  }
+
+  Set<int> _visibleCodepoints(String text) {
+    return text.runes.toSet();
+  }
+
+  List<String> _parseFormat(String line) {
+    final int colon = line.indexOf(':');
+    if (colon == -1) {
+      return <String>[];
+    }
+    return line
+        .substring(colon + 1)
+        .split(',')
+        .map((String item) => item.trim().toLowerCase())
+        .toList();
+  }
+
+  List<String> _splitAssLine(String line, int columnCount) {
+    final int colon = line.indexOf(':');
+    if (colon == -1) {
+      return <String>[];
+    }
+    final int splitCount = columnCount <= 0 ? 0 : columnCount - 1;
+    final List<String> result = <String>[];
+    var rest = line.substring(colon + 1);
+    for (var i = 0; i < splitCount; i++) {
+      final int comma = rest.indexOf(',');
+      if (comma == -1) {
+        result.add(rest);
+        return result;
+      }
+      result.add(rest.substring(0, comma));
+      rest = rest.substring(comma + 1);
+    }
+    result.add(rest);
+    return result;
+  }
+
+  void _appendNecessaryCodepoints(Set<int> codepoints) {
+    for (var cp = 0x20; cp <= 0x7E; cp++) {
+      codepoints.add(cp);
+    }
+    codepoints
+      ..add(0x0A)
+      ..add(0x0D)
+      ..add(0x09)
+      ..add(0xFF1F)
+      ..add(0xFF20);
+    for (var cp = 0x41; cp <= 0x5A; cp++) {
+      codepoints
+        ..add(cp)
+        ..add(cp + 65248);
+    }
+    for (var cp = 0x61; cp <= 0x7A; cp++) {
+      codepoints
+        ..add(cp)
+        ..add(cp + 65248);
+    }
+    for (var cp = 0x30; cp <= 0x39; cp++) {
+      codepoints
+        ..add(cp)
+        ..add(cp + 65248);
+    }
+  }
+
+  void _throwOnDuplicateFonts(List<ResolvedFontFile> candidates) {
+    final Map<String, List<ResolvedFontFile>> buckets =
+        <String, List<ResolvedFontFile>>{};
+    for (final ResolvedFontFile font in candidates) {
+      for (final String familyName in font.familyNames) {
+        final String key = <Object>[
+          normalizeFontName(familyName),
+          font.bold,
+          font.italic,
+          font.weight,
+          font.trackIndex,
+          font.maxpNumGlyphs,
+        ].join('|');
+        buckets.putIfAbsent(key, () => <ResolvedFontFile>[]).add(font);
+      }
+    }
+    for (final List<ResolvedFontFile> bucket in buckets.values) {
+      if (bucket.length >= 2) {
+        throw Exception(
+          '字体源中存在重复字体: ${bucket.map((ResolvedFontFile f) => f.fileName).join(', ')}',
+        );
+      }
+    }
+  }
+
+  String _decodeSubtitleBytes(Uint8List raw) {
+    if (raw.length >= 3 &&
+        raw[0] == 0xEF &&
+        raw[1] == 0xBB &&
+        raw[2] == 0xBF) {
+      return utf8.decode(raw.sublist(3), allowMalformed: true);
+    }
+    if (raw.length >= 2 && raw[0] == 0xFF && raw[1] == 0xFE) {
+      return _decodeUtf16(raw.sublist(2), littleEndian: true);
+    }
+    if (raw.length >= 2 && raw[0] == 0xFE && raw[1] == 0xFF) {
+      return _decodeUtf16(raw.sublist(2), littleEndian: false);
+    }
+    return utf8.decode(raw);
+  }
+
+  String _decodeUtf16(Uint8List bytes, {required bool littleEndian}) {
+    final List<int> codeUnits = <int>[];
+    for (var i = 0; i + 1 < bytes.length; i += 2) {
+      codeUnits.add(
+        littleEndian
+            ? bytes[i] | (bytes[i + 1] << 8)
+            : (bytes[i] << 8) | bytes[i + 1],
+      );
+    }
+    return String.fromCharCodes(codeUnits);
   }
 
   Future<List<String>> extractInputAttachmentStreams(

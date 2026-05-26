@@ -1431,6 +1431,9 @@ class ResolvedFontFile {
     this.fullNames = const <String>{},
     this.maxpNumGlyphs = 0,
     this.fsType = 0,
+    this.bold = false,
+    this.italic = false,
+    this.weight = 400,
     this.licenseDescription = '',
   });
 
@@ -1444,6 +1447,9 @@ class ResolvedFontFile {
   final Set<String> fullNames;
   final int maxpNumGlyphs;
   final int fsType;
+  final bool bold;
+  final bool italic;
+  final int weight;
   final String licenseDescription;
 
   ResolvedFontFile copyWith({
@@ -1457,6 +1463,9 @@ class ResolvedFontFile {
     Set<String>? fullNames,
     int? maxpNumGlyphs,
     int? fsType,
+    bool? bold,
+    bool? italic,
+    int? weight,
     String? licenseDescription,
   }) {
     return ResolvedFontFile(
@@ -1470,6 +1479,9 @@ class ResolvedFontFile {
       fullNames: fullNames ?? this.fullNames,
       maxpNumGlyphs: maxpNumGlyphs ?? this.maxpNumGlyphs,
       fsType: fsType ?? this.fsType,
+      bold: bold ?? this.bold,
+      italic: italic ?? this.italic,
+      weight: weight ?? this.weight,
       licenseDescription: licenseDescription ?? this.licenseDescription,
     );
   }
