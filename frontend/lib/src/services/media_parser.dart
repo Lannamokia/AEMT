@@ -45,7 +45,11 @@ MediaInfo parseMediaInfo(String inputPath, Map<String, dynamic> json) {
         sourceLabel: '源文件',
         attachmentFileName: (tags['filename'] ?? '').toString(),
         attachmentMimeType: (tags['mimetype'] ?? '').toString(),
-        videoInfo: kind == StreamKind.video ? _parseVideoStreamInfo(item) : null,
+        videoInfo: kind == StreamKind.video
+            ? _parseVideoStreamInfo(item)
+            : null,
+        channels: (item['channels'] as num?)?.toInt() ?? 0,
+        channelLayout: (item['channel_layout'] ?? '').toString(),
       ),
     );
   }
@@ -95,10 +99,12 @@ VideoStreamInfo _parseVideoStreamInfo(Map<String, dynamic> item) {
     if (type == 'Mastering display metadata') {
       masterDisplay = raw.toString();
     } else if (type == 'Content light level metadata') {
-      maxCll = (raw['max_content'] as num?) ??
+      maxCll =
+          (raw['max_content'] as num?) ??
           num.tryParse((raw['max_content'] ?? '0').toString()) ??
           0;
-      maxFall = (raw['max_average'] as num?) ??
+      maxFall =
+          (raw['max_average'] as num?) ??
           num.tryParse((raw['max_average'] ?? '0').toString()) ??
           0;
     } else if (type == 'DOVI configuration record') {

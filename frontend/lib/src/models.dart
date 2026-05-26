@@ -42,11 +42,7 @@ T _enumByName<T extends Enum>(List<T> values, Object? rawValue, T fallback) {
   return fallback;
 }
 
-String _readString(
-  Map<String, dynamic> json,
-  String field,
-  String fallback,
-) {
+String _readString(Map<String, dynamic> json, String field, String fallback) {
   if (!json.containsKey(field) || json[field] == null) {
     return fallback;
   }
@@ -93,10 +89,7 @@ bool _readBool(Map<String, dynamic> json, String field, bool fallback) {
   throw FormatException('字段 $field 类型不匹配');
 }
 
-Map<String, dynamic> _readObjectMap(
-  Map<String, dynamic> json,
-  String field,
-) {
+Map<String, dynamic> _readObjectMap(Map<String, dynamic> json, String field) {
   if (!json.containsKey(field) || json[field] == null) {
     return <String, dynamic>{};
   }
@@ -106,8 +99,7 @@ Map<String, dynamic> _readObjectMap(
   }
   if (value is Map) {
     return value.map(
-      (dynamic key, dynamic innerValue) =>
-          MapEntry(key.toString(), innerValue),
+      (dynamic key, dynamic innerValue) => MapEntry(key.toString(), innerValue),
     );
   }
   throw FormatException('字段 $field 类型不匹配');
@@ -180,9 +172,7 @@ class Version implements Comparable<Version> {
   final int patch;
 
   static Version? tryParse(String value) {
-    final RegExpMatch? match = RegExp(
-      r'(\d+)\.(\d+)\.(\d+)',
-    ).firstMatch(value);
+    final RegExpMatch? match = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(value);
     if (match == null) {
       return null;
     }
@@ -194,11 +184,7 @@ class Version implements Comparable<Version> {
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'major': major,
-      'minor': minor,
-      'patch': patch,
-    };
+    return <String, dynamic>{'major': major, 'minor': minor, 'patch': patch};
   }
 
   factory Version.fromJson(Map<String, dynamic> json) {
@@ -384,11 +370,7 @@ class AudioStreamConfig {
       vbrQuality: _readInt(json, 'vbrQuality', defaults.vbrQuality),
       vbrModeOpus: _readString(json, 'vbrModeOpus', defaults.vbrModeOpus),
       sampleRate: _readString(json, 'sampleRate', defaults.sampleRate),
-      channelLayout: _readString(
-        json,
-        'channelLayout',
-        defaults.channelLayout,
-      ),
+      channelLayout: _readString(json, 'channelLayout', defaults.channelLayout),
       downmixAlgo: _readString(json, 'downmixAlgo', defaults.downmixAlgo),
       profile: _readString(json, 'profile', defaults.profile),
       compressionLevel: _readInt(
@@ -405,11 +387,7 @@ class AudioStreamConfig {
       loudnormTp: _readDouble(json, 'loudnormTp', defaults.loudnormTp),
       loudnormLra: _readDouble(json, 'loudnormLra', defaults.loudnormLra),
       drcEnabled: _readBool(json, 'drcEnabled', defaults.drcEnabled),
-      drcThreshold: _readDouble(
-        json,
-        'drcThreshold',
-        defaults.drcThreshold,
-      ),
+      drcThreshold: _readDouble(json, 'drcThreshold', defaults.drcThreshold),
       drcRatio: _readDouble(json, 'drcRatio', defaults.drcRatio),
       drcAttack: _readDouble(json, 'drcAttack', defaults.drcAttack),
       drcRelease: _readDouble(json, 'drcRelease', defaults.drcRelease),
@@ -923,7 +901,9 @@ class FontSubsetStepPlan {
 }
 
 List<String> fontToolsCompatibilityFlags(String? versionText) {
-  final Version? version = versionText == null ? null : Version.tryParse(versionText);
+  final Version? version = versionText == null
+      ? null
+      : Version.tryParse(versionText);
   final List<String> flags = <String>[];
   if (version == null || version > const Version(4, 44, 0)) {
     flags.add('--no-prune-codepage-ranges');
@@ -1012,8 +992,7 @@ class EncodingSettingsSnapshot {
             MapEntry(key, value.toJson()),
       ),
       'audioStreamConfigs': audioStreamConfigs.map(
-        (String key, AudioStreamConfig value) =>
-            MapEntry(key, value.toJson()),
+        (String key, AudioStreamConfig value) => MapEntry(key, value.toJson()),
       ),
       'audioDefaultProfile': audioDefaultProfile.toJson(),
       'videoEncodingConfigs': videoEncodingConfigs.map(
@@ -1127,11 +1106,7 @@ class EncodingSettingsSnapshot {
       toneMappingConfig: toneMappingJson.isEmpty
           ? const ToneMappingConfig.defaultBt709()
           : ToneMappingConfig.fromJson(toneMappingJson),
-      continueOnMissingFont: _readBool(
-        json,
-        'continueOnMissingFont',
-        false,
-      ),
+      continueOnMissingFont: _readBool(json, 'continueOnMissingFont', false),
       sourceHanEllipsisFix: _readBool(json, 'sourceHanEllipsisFix', true),
       importStatusMessage: version == 1
           ? '已导入旧版本预设，音频高级参数、视频码控与色调映射沿用默认'
@@ -1197,21 +1172,23 @@ class RuntimeDiagnostics {
   List<String> get hardwareDecodeLabels => hwaccels
       .map((String item) => item.trim().toLowerCase())
       .where(
-      (String item) =>
-        item.isNotEmpty && item != 'hardware acceleration methods:',
+        (String item) =>
+            item.isNotEmpty && item != 'hardware acceleration methods:',
       )
-      .map((String item) => switch (item) {
-            'cuda' => 'CUDA',
-            'd3d11va' => 'D3D11VA',
-            'dxva2' => 'DXVA2',
-            'qsv' => 'QSV',
-            'amf' => 'AMF',
-            'd3d12va' => 'D3D12VA',
-            'vaapi' => 'VAAPI',
-            'opencl' => 'OpenCL',
-            'vulkan' => 'Vulkan',
-            _ => item.toUpperCase(),
-          })
+      .map(
+        (String item) => switch (item) {
+          'cuda' => 'CUDA',
+          'd3d11va' => 'D3D11VA',
+          'dxva2' => 'DXVA2',
+          'qsv' => 'QSV',
+          'amf' => 'AMF',
+          'd3d12va' => 'D3D12VA',
+          'vaapi' => 'VAAPI',
+          'opencl' => 'OpenCL',
+          'vulkan' => 'Vulkan',
+          _ => item.toUpperCase(),
+        },
+      )
       .toList();
 
   bool get hasNvenc =>
@@ -1319,6 +1296,8 @@ class MediaStreamEntry {
     this.attachmentMimeType,
     this.externalPath,
     this.videoInfo,
+    this.channels = 0,
+    this.channelLayout = '',
   });
 
   final int index;
@@ -1336,6 +1315,8 @@ class MediaStreamEntry {
   final String? attachmentMimeType;
   final String? externalPath;
   final VideoStreamInfo? videoInfo;
+  final int channels;
+  final String channelLayout;
 
   MediaStreamEntry copyWith({
     String? codec,
@@ -1350,6 +1331,8 @@ class MediaStreamEntry {
     String? attachmentMimeType,
     String? externalPath,
     VideoStreamInfo? videoInfo,
+    int? channels,
+    String? channelLayout,
   }) {
     return MediaStreamEntry(
       index: index,
@@ -1367,6 +1350,8 @@ class MediaStreamEntry {
       attachmentMimeType: attachmentMimeType ?? this.attachmentMimeType,
       externalPath: externalPath ?? this.externalPath,
       videoInfo: videoInfo ?? this.videoInfo,
+      channels: channels ?? this.channels,
+      channelLayout: channelLayout ?? this.channelLayout,
     );
   }
 }

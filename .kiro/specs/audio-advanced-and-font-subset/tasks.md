@@ -411,8 +411,8 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 18: First-time HDR notice is one-shot**
     - **Validates: Requirements 27.3**
 
-- [ ] 12. _TaskPlanner：音频参数（`frontend/lib/src/controller_task_planner.dart`）
-  - [ ] 12.1 Implement `_buildAudioStreamArguments(int outIdx, AudioStreamConfig)`
+- [x] 12. _TaskPlanner：音频参数（`frontend/lib/src/controller_task_planner.dart`）
+  - [x] 12.1 Implement `_buildAudioStreamArguments(int outIdx, AudioStreamConfig)`
     - Encoder branches per Req 2.2-2.7 matrix; CBR/VBR per Req 3;
       `-ar:N` only when not `保持源`; `-ac:N` / `-channel_layout:N`
       per Req 4 (with `dpl2` pan-matrix downmix)
@@ -427,14 +427,14 @@ design 中编号独立成子任务，方便逐条追溯。
       3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.1, 5.2,
       5.3, 5.4, 5.5, 5.6, 5.7, 6.5_
 
-  - [ ] 12.2 Implement `shouldUseLegacyAudioPath(streams, configs)`
+  - [x] 12.2 Implement `shouldUseLegacyAudioPath(streams, configs)`
     - Returns true iff every stream's config equals
       `AudioStreamConfig.defaultAac()` and `audioDefaultProfile ==
       defaultAac()`; switches to legacy `-c:a aac -b:a 320k -ar 48000`
       output for byte-equivalence with pre-feature command
     - _Requirements: 6.4_
 
-  - [ ] 12.3 Write property test for audio command construction
+  - [x] 12.3 Write property test for audio command construction
     - **Property 6: Audio command construction**
     - **Validates: Requirements 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 3.2,
       3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.1, 5.2,

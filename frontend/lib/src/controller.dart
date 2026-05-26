@@ -699,6 +699,24 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  List<String> debugBuildAudioStreamArguments(
+    int outIdx,
+    AudioStreamConfig config, {
+    MediaStreamEntry? sourceStream,
+  }) {
+    return _taskPlanner._buildAudioStreamArguments(
+      outIdx,
+      config,
+      sourceStream: sourceStream,
+    );
+  }
+
+  @visibleForTesting
+  bool debugShouldUseLegacyAudioPath(List<MediaStreamEntry> streams) {
+    return _taskPlanner.shouldUseLegacyAudioPath(streams);
+  }
+
   void _markChanged() {
     notifyListeners();
   }

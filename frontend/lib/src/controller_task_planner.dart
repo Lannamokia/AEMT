@@ -17,7 +17,8 @@ class _TaskPlanner {
       throw Exception('请先设置输出目录。');
     }
     if (_controller.compressionMode == CompressionMode.episodic) {
-      final String template = _controller._exportConfig.resolvedEpisodicNamingTemplate;
+      final String template =
+          _controller._exportConfig.resolvedEpisodicNamingTemplate;
       if (template.isEmpty) {
         throw Exception('请先填写命名格式。');
       }
@@ -51,14 +52,14 @@ class _TaskPlanner {
         .resolveFontFiles(_controller.importedFontSources, workDir.path);
     final String outputPath = task.outputPath;
     await Directory(_controller.outputDirectory).create(recursive: true);
-    final List<SubtitleBinding> bindings = _controller._resolveBindings(task.bindingKeys);
+    final List<SubtitleBinding> bindings = _controller._resolveBindings(
+      task.bindingKeys,
+    );
     _controller._validateTaskBindings(task.profile, bindings);
     if (task.profile == ExportProfile.muxMkv) {
-      final List<ResolvedFontFile> extractedAttachments =
-          await _controller._fontAssetService.extractEnabledInputAttachments(
-            info,
-            workDir.path,
-          );
+      final List<ResolvedFontFile> extractedAttachments = await _controller
+          ._fontAssetService
+          .extractEnabledInputAttachments(info, workDir.path);
       return _buildMuxPlan(
         info: info,
         bindings: bindings,
@@ -109,6 +110,7 @@ class _TaskPlanner {
       throw Exception('至少需要启用一条视频流。');
     }
     final _EncoderSelection encoder = resolveEncoder(enabledVideo.first.codec);
+    final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
     final List<String> args = <String>[
       '-y',
       '-hide_banner',
@@ -135,12 +137,7 @@ class _TaskPlanner {
       '-c:v',
       encoder.encoder,
       ..._buildVideoCodecArguments(encoder),
-      '-c:a',
-      'aac',
-      '-b:a',
-      '320k',
-      '-ar',
-      '48000',
+      ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
       '-movflags',
       '+faststart',
     ]);
@@ -219,6 +216,7 @@ class _TaskPlanner {
       enabledVideo.first.codec,
       preferredCodecFamily: 'hevc',
     );
+    final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
     final List<String> args = <String>[
       '-y',
       '-hide_banner',
@@ -227,13 +225,15 @@ class _TaskPlanner {
       'pipe:2',
       ..._buildPrimaryInputArguments(encoder, info.inputPath),
     ];
-    final List<MediaStreamEntry> selectedExternalSubtitle = enabledExternalSubtitle
-        .where(
-          (MediaStreamEntry stream) => bindings.any(
-            (SubtitleBinding binding) => binding.filePath == stream.externalPath,
-          ),
-        )
-        .toList();
+    final List<MediaStreamEntry> selectedExternalSubtitle =
+        enabledExternalSubtitle
+            .where(
+              (MediaStreamEntry stream) => bindings.any(
+                (SubtitleBinding binding) =>
+                    binding.filePath == stream.externalPath,
+              ),
+            )
+            .toList();
     for (final MediaStreamEntry subtitle in selectedExternalSubtitle) {
       args.addAll(<String>['-i', subtitle.externalPath!]);
     }
@@ -267,12 +267,7 @@ class _TaskPlanner {
       _controller.outputFps.trim(),
       ..._buildVideoCodecArguments(encoder),
       ..._buildPixelFormatArguments(encoder),
-      '-c:a',
-      'aac',
-      '-b:a',
-      '320k',
-      '-ar',
-      '48000',
+      ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
       '-c:s',
       'copy',
     ]);
@@ -350,6 +345,226 @@ class _TaskPlanner {
     );
   }
 
+  bool shouldUseLegacyAudioPath(List<MediaStreamEntry> streams) {
+    if (_controller.audioDefaultProfile !=
+        const AudioStreamConfig.defaultAac()) {
+      return false;
+    }
+    for (final MediaStreamEntry stream in streams) {
+      final String key = _controller._audioStreamConfigKey(
+        _controller.mediaInfo?.inputPath ?? '',
+        stream.index,
+      );
+      final AudioStreamConfig config =
+          _controller.audioStreamConfigs[key] ??
+          const AudioStreamConfig.defaultAac();
+      if (config != const AudioStreamConfig.defaultAac()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  List<String> _buildAudioArgumentsForStreams(
+    List<MediaStreamEntry> streams,
+    bool useLegacyAudio,
+  ) {
+    if (streams.isEmpty) {
+      return const <String>[];
+    }
+    if (useLegacyAudio) {
+      return const <String>['-c:a', 'aac', '-b:a', '320k', '-ar', '48000'];
+    }
+    final List<String> args = <String>[];
+    for (var outIdx = 0; outIdx < streams.length; outIdx++) {
+      final MediaStreamEntry stream = streams[outIdx];
+      final String key = _controller._audioStreamConfigKey(
+        _controller.mediaInfo?.inputPath ?? '',
+        stream.index,
+      );
+      final AudioStreamConfig config =
+          _controller.audioStreamConfigs[key] ??
+          _controller.audioDefaultProfile;
+      args.addAll(
+        _buildAudioStreamArguments(outIdx, config, sourceStream: stream),
+      );
+    }
+    return args;
+  }
+
+  List<String> _buildAudioStreamArguments(
+    int outIdx,
+    AudioStreamConfig config, {
+    MediaStreamEntry? sourceStream,
+  }) {
+    final String suffix = ':$outIdx';
+    final String encoder = config.encoder.trim();
+    if (encoder.isEmpty) {
+      throw Exception('音频编码器  不可用');
+    }
+    if (encoder == 'copy') {
+      return <String>['-c:a$suffix', 'copy'];
+    }
+    if (!_isAudioEncoderAvailable(encoder)) {
+      throw Exception('音频编码器 $encoder 不可用');
+    }
+    final List<String> args = <String>['-c:a$suffix', encoder];
+    final List<String> filters = <String>[];
+    switch (encoder) {
+      case 'aac':
+        _addAacArguments(args, suffix, config);
+        if (config.profile.trim().isNotEmpty) {
+          args.addAll(<String>['-profile:a$suffix', config.profile.trim()]);
+        }
+        break;
+      case 'libfdk_aac':
+        _addAacArguments(args, suffix, config);
+        if (config.profile.trim().isNotEmpty) {
+          args.addAll(<String>['-profile:a$suffix', config.profile.trim()]);
+        }
+        break;
+      case 'libopus':
+        _addBitrateOrOpusVbrArguments(args, suffix, config);
+        args.addAll(<String>[
+          '-compression_level$suffix',
+          config.compressionLevel.toString(),
+        ]);
+        break;
+      case 'flac':
+        args.addAll(<String>[
+          '-compression_level$suffix',
+          config.compressionLevel.toString(),
+        ]);
+        break;
+      case 'ac3':
+      case 'eac3':
+        _addCbrBitrateArgument(args, suffix, config);
+        break;
+      default:
+        throw Exception('音频编码器 $encoder 不可用');
+    }
+    if (config.sampleRate != '保持源') {
+      args.addAll(<String>['-ar$suffix', config.sampleRate]);
+    }
+    _addChannelArguments(
+      args: args,
+      filters: filters,
+      suffix: suffix,
+      config: config,
+      sourceStream: sourceStream,
+    );
+    if (config.loudnormEnabled) {
+      filters.add(
+        'loudnorm=I=${_fmt(config.loudnormI)}:TP=${_fmt(config.loudnormTp)}:LRA=${_fmt(config.loudnormLra)}',
+      );
+    }
+    if (config.drcEnabled) {
+      filters.add(
+        'acompressor=threshold=${_fmt(config.drcThreshold)}dB:ratio=${_fmt(config.drcRatio)}:attack=${_fmt(config.drcAttack)}:release=${_fmt(config.drcRelease)}',
+      );
+    }
+    final String customFilter = config.customFilter.trim();
+    if (customFilter.isNotEmpty) {
+      filters.add(customFilter);
+    }
+    if (filters.isNotEmpty) {
+      args.addAll(<String>['-af$suffix', filters.join(',')]);
+    }
+    return args;
+  }
+
+  void _addAacArguments(
+    List<String> args,
+    String suffix,
+    AudioStreamConfig config,
+  ) {
+    if (config.mode == 'VBR') {
+      if (config.encoder == 'libfdk_aac') {
+        args.addAll(<String>['-vbr$suffix', config.vbrQuality.toString()]);
+      } else {
+        args.addAll(<String>['-q:a$suffix', config.vbrQuality.toString()]);
+      }
+      return;
+    }
+    _addCbrBitrateArgument(args, suffix, config);
+  }
+
+  void _addBitrateOrOpusVbrArguments(
+    List<String> args,
+    String suffix,
+    AudioStreamConfig config,
+  ) {
+    if (config.mode == 'VBR') {
+      args.addAll(<String>['-vbr$suffix', config.vbrModeOpus]);
+      return;
+    }
+    _addCbrBitrateArgument(args, suffix, config);
+  }
+
+  void _addCbrBitrateArgument(
+    List<String> args,
+    String suffix,
+    AudioStreamConfig config,
+  ) {
+    if (!RegExp(r'^\d+[kK]$').hasMatch(config.bitrate.trim())) {
+      throw Exception('码率格式应为如 192k');
+    }
+    args.addAll(<String>['-b:a$suffix', config.bitrate.trim()]);
+  }
+
+  void _addChannelArguments({
+    required List<String> args,
+    required List<String> filters,
+    required String suffix,
+    required AudioStreamConfig config,
+    required MediaStreamEntry? sourceStream,
+  }) {
+    final String layout = config.channelLayout.trim();
+    if (layout.isEmpty || layout == '保持源') {
+      return;
+    }
+    if (layout == 'stereo' &&
+        config.downmixAlgo == 'dpl2' &&
+        (sourceStream?.channels ?? 0) > 2) {
+      filters.add(_buildDpl2PanFilter(sourceStream));
+      return;
+    }
+    final int? channels = switch (layout) {
+      'mono' => 1,
+      'stereo' => 2,
+      '5.1' => 6,
+      '7.1' => 8,
+      _ => null,
+    };
+    if (channels == null) {
+      return;
+    }
+    args.addAll(<String>['-ac$suffix', channels.toString()]);
+    if (layout != 'mono' && layout != 'stereo') {
+      args.addAll(<String>['-channel_layout$suffix', layout]);
+    }
+  }
+
+  String _buildDpl2PanFilter(MediaStreamEntry? sourceStream) {
+    final String layout = sourceStream?.channelLayout.toLowerCase() ?? '';
+    final bool hasBack = layout.contains('back') || layout.contains('7.1');
+    final String surroundLeft = hasBack ? 'BL' : 'SL';
+    final String surroundRight = hasBack ? 'BR' : 'SR';
+    return 'pan=stereo|FL=FL+0.707*FC+0.707*$surroundLeft|FR=FR+0.707*FC+0.707*$surroundRight';
+  }
+
+  bool _isAudioEncoderAvailable(String encoder) {
+    final Set<String> available = _controller.diagnostics.audioEncoders;
+    return available.contains(encoder);
+  }
+
+  String _fmt(num value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toString();
+  }
+
   List<String> _buildVideoCodecArguments(_EncoderSelection selection) {
     final EncoderTuning tuning = _controller.encoderTunings[selection.encoder]!;
     final List<String> args = <String>[
@@ -403,7 +618,12 @@ class _TaskPlanner {
       case 'hevc_amf':
         return const <String>['-pix_fmt', 'p010le', '-profile:v', 'main10'];
       case 'libx265':
-        return const <String>['-pix_fmt', 'yuv420p10le', '-profile:v', 'main10'];
+        return const <String>[
+          '-pix_fmt',
+          'yuv420p10le',
+          '-profile:v',
+          'main10',
+        ];
       default:
         return const <String>[];
     }
@@ -523,7 +743,10 @@ class _TaskPlanner {
     required MediaStreamEntry stream,
   }) {
     if (stream.title.isNotEmpty) {
-      args.addAll(<String>['-metadata:s:$streamSpecifier', 'title=${stream.title}']);
+      args.addAll(<String>[
+        '-metadata:s:$streamSpecifier',
+        'title=${stream.title}',
+      ]);
     }
     if (stream.language.isNotEmpty) {
       args.addAll(<String>[
@@ -535,7 +758,10 @@ class _TaskPlanner {
       if (stream.isDefault) 'default',
       if (stream.isForced) 'forced',
     ];
-    args.addAll(<String>['-disposition:$streamSpecifier', flags.isEmpty ? '0' : flags.join('+')]);
+    args.addAll(<String>[
+      '-disposition:$streamSpecifier',
+      flags.isEmpty ? '0' : flags.join('+'),
+    ]);
   }
 
   List<String> _buildMkvSubtitleMetadataArguments(
@@ -553,7 +779,10 @@ class _TaskPlanner {
       if (languageTag.isNotEmpty) {
         args.addAll(<String>['--set', 'language=$languageTag']);
       }
-      args.addAll(<String>['--set', 'flag-default=${stream.isDefault ? 1 : 0}']);
+      args.addAll(<String>[
+        '--set',
+        'flag-default=${stream.isDefault ? 1 : 0}',
+      ]);
       args.addAll(<String>['--set', 'flag-forced=${stream.isForced ? 1 : 0}']);
     }
     return args;
@@ -565,7 +794,9 @@ class _TaskPlanner {
   }) {
     final String codecFamily =
         preferredCodecFamily ??
-        (videoCodec.contains('265') || videoCodec.contains('hevc') ? 'hevc' : 'avc');
+        (videoCodec.contains('265') || videoCodec.contains('hevc')
+            ? 'hevc'
+            : 'avc');
     if (_controller.hardwareMode == HardwareMode.software) {
       return _EncoderSelection(
         encoder: codecFamily == 'hevc' ? 'libx265' : 'libx264',
