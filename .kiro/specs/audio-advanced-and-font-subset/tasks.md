@@ -352,8 +352,8 @@ design 中编号独立成子任务，方便逐条追溯。
 - [ ] 9. Checkpoint - font service end-to-end
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Snapshot v2（`frontend/lib/src/controller_export_config.dart`）
-  - [ ] 10.1 Upgrade `EncodingSettingsSnapshot` to `version=2`
+- [x] 10. Snapshot v2（`frontend/lib/src/controller_export_config.dart`）
+  - [x] 10.1 Upgrade `EncodingSettingsSnapshot` to `version=2`
     - `toJson` writes `audioStreamConfigs / audioDefaultProfile /
       videoEncodingConfigs / toneMappingConfig / continueOnMissingFont /
       sourceHanEllipsisFix`
@@ -368,11 +368,11 @@ design 中编号独立成子任务，方便逐条追溯。
       `applyEncodingSettingsSnapshot` accordingly
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 28.7_
 
-  - [ ] 10.2 Write property test for v2 snapshot round-trip
+  - [x] 10.2 Write property test for v2 snapshot round-trip
     - **Property 4: EncodingSettingsSnapshot v2 round-trip**
     - **Validates: Requirements 8.1, 8.2, 8.6**
 
-  - [ ] 10.3 Write unit tests for cross-version import
+  - [x] 10.3 Write unit tests for cross-version import
     - v1 import → defaults + status message
     - v2 import with mismatching `inputPath` → only
       `audioDefaultProfile / videoEncodingConfigs / toneMappingConfig`
@@ -380,8 +380,8 @@ design 中编号独立成子任务，方便逐条追溯。
     - v3 import → `FormatException`
     - _Requirements: 8.3, 8.4, 8.5_
 
-- [ ] 11. AemtController 状态扩展（`frontend/lib/src/controller.dart`）
-  - [ ] 11.1 Add new fields and named setters
+- [x] 11. AemtController 状态扩展（`frontend/lib/src/controller.dart`）
+  - [x] 11.1 Add new fields and named setters
     - `Map<String, AudioStreamConfig> audioStreamConfigs` (keys
       `<inputPath>#<streamIndex>`), `audioDefaultProfile`,
       `Map<String, VideoEncodingConfig> videoEncodingConfigs`,
@@ -403,11 +403,11 @@ design 中编号独立成子任务，方便逐条追溯。
       DolbyVision}` and `tonemapMode == auto`
     - _Requirements: 6.1, 6.2, 6.3, 7.3, 8.1, 27.3, 28.4, 28.7_
 
-  - [ ] 11.2 Write property test for video RC mode reconciliation
+  - [x] 11.2 Write property test for video RC mode reconciliation
     - **Property 8: Rate-control mode reconciliation**
     - **Validates: Requirements 7.2, 7.3**
 
-  - [ ] 11.3 Write property test for one-shot HDR notice
+  - [x] 11.3 Write property test for one-shot HDR notice
     - **Property 18: First-time HDR notice is one-shot**
     - **Validates: Requirements 27.3**
 

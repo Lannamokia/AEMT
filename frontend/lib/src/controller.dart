@@ -20,8 +20,17 @@ part 'controller_export_config.dart';
 part 'controller_task_planner.dart';
 
 class AemtController extends ChangeNotifier {
-  AemtController() {
-    videoController = VideoController(player);
+  AemtController({@visibleForTesting bool initializePlayer = true})
+    : _playerInitialized = initializePlayer {
+    if (initializePlayer) {
+      player = Player(configuration: const PlayerConfiguration(libass: true));
+      videoController = VideoController(player);
+    }
+    for (final String encoderKey in kSupportedRcModes.keys) {
+      videoEncodingConfigs[encoderKey] = VideoEncodingConfig.defaultsFor(
+        encoderKey,
+      );
+    }
   }
 
   static const String defaultEpisodicNamingTemplate =
@@ -52,10 +61,9 @@ class AemtController extends ChangeNotifier {
     NamingTemplateVariable(name: 'ext', description: '扩展名，如 mp4 / mkv'),
   ];
 
-  final Player player = Player(
-    configuration: const PlayerConfiguration(libass: true),
-  );
+  late final Player player;
   late final VideoController videoController;
+  final bool _playerInitialized;
 
   RuntimeDiagnostics diagnostics = RuntimeDiagnostics.empty;
   MediaInfo? mediaInfo;
@@ -113,6 +121,15 @@ class AemtController extends ChangeNotifier {
   final List<ExportTask> tasks = <ExportTask>[];
   final Map<String, List<String>> importedFontEntries =
       <String, List<String>>{};
+  final Map<String, AudioStreamConfig> audioStreamConfigs =
+      <String, AudioStreamConfig>{};
+  AudioStreamConfig audioDefaultProfile = const AudioStreamConfig.defaultAac();
+  final Map<String, VideoEncodingConfig> videoEncodingConfigs =
+      <String, VideoEncodingConfig>{};
+  ToneMappingConfig toneMappingConfig = const ToneMappingConfig.defaultBt709();
+  bool continueOnMissingFont = false;
+  bool sourceHanEllipsisFix = true;
+  bool _hdrToneMappingNoticeShown = false;
   final Map<String, EncoderTuning> encoderTunings = <String, EncoderTuning>{
     'libx264': const EncoderTuning(
       key: 'libx264',
@@ -315,8 +332,8 @@ class AemtController extends ChangeNotifier {
       final String resolvedPath = p.extension(path).toLowerCase() == '.json'
           ? path
           : '$path.json';
-          final EncodingSettingsSnapshot snapshot =
-            _exportConfig.buildEncodingSettingsSnapshot();
+      final EncodingSettingsSnapshot snapshot = _exportConfig
+          .buildEncodingSettingsSnapshot();
       final String jsonText = const JsonEncoder.withIndent(
         '  ',
       ).convert(snapshot.toJson());
@@ -383,6 +400,80 @@ class AemtController extends ChangeNotifier {
 
   void setHardwareMode(HardwareMode value) {
     hardwareMode = value;
+    notifyListeners();
+  }
+
+  void setAudioStreamConfig(String key, AudioStreamConfig value) {
+    audioStreamConfigs[key] = value;
+    notifyListeners();
+  }
+
+  void setAudioDefaultProfile(AudioStreamConfig value) {
+    audioDefaultProfile = value;
+    _syncAudioStreamConfigsWithMedia(resetExisting: true);
+    notifyListeners();
+  }
+
+  void setVideoEncodingMode(String encoderKey, String mode) {
+    final VideoEncodingConfig current = _videoEncodingConfigFor(encoderKey);
+    videoEncodingConfigs[encoderKey] = current.copyWith(
+      mode: mode,
+      userOverridden: true,
+    );
+    notifyListeners();
+  }
+
+  void setVideoEncodingField(
+    String encoderKey, {
+    int? crf,
+    String? bitrate,
+    String? maxrate,
+    String? minrate,
+    String? bufsize,
+    int? qpI,
+    int? qpP,
+    int? qpB,
+  }) {
+    final VideoEncodingConfig current = _videoEncodingConfigFor(encoderKey);
+    videoEncodingConfigs[encoderKey] = current.copyWith(
+      userOverridden: true,
+      crf: crf,
+      bitrate: bitrate,
+      maxrate: maxrate,
+      minrate: minrate,
+      bufsize: bufsize,
+      qpI: qpI,
+      qpP: qpP,
+      qpB: qpB,
+    );
+    notifyListeners();
+  }
+
+  void reconcileVideoEncodingMode(String encoderKey) {
+    final List<String> supported =
+        kSupportedRcModes[encoderKey] ?? const <String>[];
+    final VideoEncodingConfig current = _videoEncodingConfigFor(encoderKey);
+    if (supported.contains(current.mode)) {
+      return;
+    }
+    videoEncodingConfigs[encoderKey] = VideoEncodingConfig.defaultsFor(
+      encoderKey,
+    );
+    notifyListeners();
+  }
+
+  void setToneMappingConfig(ToneMappingConfig value) {
+    toneMappingConfig = value;
+    notifyListeners();
+  }
+
+  void setContinueOnMissingFont(bool value) {
+    continueOnMissingFont = value;
+    notifyListeners();
+  }
+
+  void setSourceHanEllipsisFix(bool value) {
+    sourceHanEllipsisFix = value;
     notifyListeners();
   }
 
@@ -584,6 +675,30 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  EncodingSettingsSnapshot debugBuildEncodingSettingsSnapshot() {
+    return _exportConfig.buildEncodingSettingsSnapshot();
+  }
+
+  @visibleForTesting
+  void debugApplyEncodingSettingsSnapshot(EncodingSettingsSnapshot snapshot) {
+    _exportConfig.applyEncodingSettingsSnapshot(snapshot);
+    if (snapshot.importStatusMessage != null) {
+      statusMessage = snapshot.importStatusMessage;
+    }
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugSetMediaInfo(MediaInfo? value) {
+    mediaInfo = value;
+    if (value != null) {
+      _syncAudioStreamConfigsWithMedia(resetExisting: true);
+      _appendHdrToneMappingNoticeIfNeeded();
+    }
+    notifyListeners();
+  }
+
   void _markChanged() {
     notifyListeners();
   }
@@ -636,7 +751,9 @@ class AemtController extends ChangeNotifier {
 
   @override
   void dispose() {
-    unawaited(player.dispose());
+    if (_playerInitialized) {
+      unawaited(player.dispose());
+    }
     unawaited(_mediaOps.resetPreviewSubtitleArtifacts());
     super.dispose();
   }
@@ -789,6 +906,7 @@ class AemtController extends ChangeNotifier {
     mediaInfo = mediaInfo!.copyWith(
       streams: <MediaStreamEntry>[...inputStreams, ...externalStreams],
     );
+    _syncAudioStreamConfigsWithMedia();
   }
 
   bool _isBindingEnabled(MediaInfo info, SubtitleBinding binding) {
@@ -801,6 +919,60 @@ class AemtController extends ChangeNotifier {
           stream.externalPath == binding.filePath &&
           stream.enabled,
     );
+  }
+
+  String _audioStreamConfigKey(String inputPath, int streamIndex) {
+    return '$inputPath#$streamIndex';
+  }
+
+  VideoEncodingConfig _videoEncodingConfigFor(String encoderKey) {
+    return videoEncodingConfigs.putIfAbsent(
+      encoderKey,
+      () => VideoEncodingConfig.defaultsFor(encoderKey),
+    );
+  }
+
+  void _syncAudioStreamConfigsWithMedia({bool resetExisting = false}) {
+    final MediaInfo? info = mediaInfo;
+    if (info == null) {
+      return;
+    }
+    final Set<String> activeKeys = <String>{};
+    for (final MediaStreamEntry stream in info.streams.where(
+      (MediaStreamEntry stream) =>
+          stream.kind == StreamKind.audio &&
+          stream.origin == StreamOrigin.input,
+    )) {
+      final String key = _audioStreamConfigKey(info.inputPath, stream.index);
+      activeKeys.add(key);
+      if (resetExisting || !audioStreamConfigs.containsKey(key)) {
+        audioStreamConfigs[key] = audioDefaultProfile.copyWith();
+      }
+    }
+    audioStreamConfigs.removeWhere(
+      (String key, AudioStreamConfig _) =>
+          key.startsWith('${info.inputPath}#') && !activeKeys.contains(key),
+    );
+  }
+
+  void _appendHdrToneMappingNoticeIfNeeded() {
+    final VideoStreamInfo? video = mediaInfo?.primaryVideo;
+    if (video == null ||
+        _hdrToneMappingNoticeShown ||
+        toneMappingConfig.tonemapMode != 'auto') {
+      return;
+    }
+    final SourceColorClass colorClass = detectSourceColorClass(video);
+    if (colorClass != SourceColorClass.hdrPq &&
+        colorClass != SourceColorClass.hdrHlg &&
+        colorClass != SourceColorClass.dolbyVision) {
+      return;
+    }
+    const String notice = '已自动启用色调映射 (HDR → BT.709)，可在 色调映射 选项卡中查看与覆盖。';
+    statusMessage = statusMessage == null || statusMessage!.isEmpty
+        ? notice
+        : '${statusMessage!}\n$notice';
+    _hdrToneMappingNoticeShown = true;
   }
 }
 
