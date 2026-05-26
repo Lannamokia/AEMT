@@ -83,9 +83,13 @@ class _QueueRunner {
       _controller._markChanged();
       TaskPlan? plan;
       try {
-        plan = await _controller._taskPlanner.buildTaskPlan(
-          _controller.tasks[taskIndex],
-        );
+        final DebugTaskPlanBuilder? debugBuilder =
+            _controller.debugTaskPlanBuilder;
+        plan = debugBuilder == null
+            ? await _controller._taskPlanner.buildTaskPlan(
+                _controller.tasks[taskIndex],
+              )
+            : await debugBuilder(_controller.tasks[taskIndex]);
         _controller.tasks[taskIndex] = _controller.tasks[taskIndex].copyWith(
           progress: 0,
           currentStep: plan.steps.first.description,
@@ -108,18 +112,66 @@ class _QueueRunner {
       final StringBuffer buffer = StringBuffer();
       var exitCode = 0;
       try {
-        for (var stepIndex = 0;
-            stepIndex < resolvedPlan.steps.length;
-            stepIndex++) {
+        for (
+          var stepIndex = 0;
+          stepIndex < resolvedPlan.steps.length;
+          stepIndex++
+        ) {
           final CommandStep step = resolvedPlan.steps[stepIndex];
-          buffer.writeln('> ${step.description}');
-          buffer.writeln(renderCommand(step.executable, step.arguments));
+          final FontSubsetStepPlan? subsetPlan = step.fontSubsetStep;
+          final String stepDescription = subsetPlan == null
+              ? step.description
+              : _subsetStepDescription(
+                  resolvedPlan.steps,
+                  currentStepIndex: stepIndex,
+                );
+          buffer.writeln('> $stepDescription');
+          if (subsetPlan == null) {
+            buffer.writeln(renderCommand(step.executable, step.arguments));
+          } else {
+            _writeSubsetStepCommandLines(buffer, subsetPlan);
+          }
           _controller.tasks[taskIndex] = _controller.tasks[taskIndex].copyWith(
-            currentStep: step.description,
+            currentStep: stepDescription,
             progress: stepIndex / resolvedPlan.steps.length,
             log: buffer.toString(),
           );
           _controller._markChanged();
+          if (subsetPlan != null) {
+            final DebugSubsetStepExecutor? debugExecutor =
+                _controller.debugSubsetStepExecutor;
+            ({String verifyLogLine, String? fsTypeWarning}) result;
+            try {
+              result = debugExecutor == null
+                  ? await _controller._fontAssetService.executeSubsetFontStep(
+                      subsetPlan,
+                      cancelSignal: _controller._queueCancelSignal.stream,
+                    )
+                  : await debugExecutor(
+                      subsetPlan,
+                      _controller._queueCancelSignal.stream,
+                    );
+            } catch (error) {
+              buffer.writeln(error);
+              exitCode = 1;
+              break;
+            }
+            buffer.writeln(result.verifyLogLine);
+            if (result.fsTypeWarning != null) {
+              buffer.writeln(result.fsTypeWarning);
+            }
+            if (_controller.stopQueueRequested) {
+              exitCode = 1;
+              break;
+            }
+            _controller.tasks[taskIndex] = _controller.tasks[taskIndex]
+                .copyWith(
+                  progress: (stepIndex + 1) / resolvedPlan.steps.length,
+                  log: buffer.toString(),
+                );
+            _controller._markChanged();
+            continue;
+          }
           final Process process = await Process.start(
             step.executable,
             step.arguments,
@@ -160,10 +212,11 @@ class _QueueRunner {
           await stdoutSub.cancel();
           await stderrSub.cancel();
           if (exitCode == 0) {
-            _controller.tasks[taskIndex] = _controller.tasks[taskIndex].copyWith(
-              progress: (stepIndex + 1) / resolvedPlan.steps.length,
-              log: buffer.toString(),
-            );
+            _controller.tasks[taskIndex] = _controller.tasks[taskIndex]
+                .copyWith(
+                  progress: (stepIndex + 1) / resolvedPlan.steps.length,
+                  log: buffer.toString(),
+                );
             _controller._markChanged();
           }
           if (exitCode != 0 || _controller.stopQueueRequested) {
@@ -180,7 +233,9 @@ class _QueueRunner {
         progress: exitCode == 0 ? 1 : _controller.tasks[taskIndex].progress,
         currentStep: _controller.stopQueueRequested
             ? '已停止'
-            : (exitCode == 0 ? '已完成' : _controller.tasks[taskIndex].currentStep),
+            : (exitCode == 0
+                  ? '已完成'
+                  : _controller.tasks[taskIndex].currentStep),
         error: _controller.stopQueueRequested
             ? '任务已停止'
             : (exitCode == 0 ? null : '退出码 $exitCode'),
@@ -195,6 +250,7 @@ class _QueueRunner {
 
   Future<void> stopAllTasks() async {
     _controller.stopQueueRequested = true;
+    _controller._queueCancelSignal.add(null);
     _controller._activeProcess?.kill(ProcessSignal.sigterm);
     _controller._markChanged();
   }
@@ -241,9 +297,8 @@ class _QueueRunner {
     ExportProfile profile,
     List<String> bindingKeys,
   ) async {
-    final List<String> resolvedBindingKeys = _controller._selectedExistingBindingKeys(
-      bindingKeys,
-    );
+    final List<String> resolvedBindingKeys = _controller
+        ._selectedExistingBindingKeys(bindingKeys);
     return ExportTask(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       profile: profile,
@@ -311,12 +366,42 @@ class _QueueRunner {
     if (outTimeUs == null) {
       return null;
     }
-    final double stepProgress =
-        (outTimeUs / expectedDuration.inMicroseconds).clamp(0, 1).toDouble();
+    final double stepProgress = (outTimeUs / expectedDuration.inMicroseconds)
+        .clamp(0, 1)
+        .toDouble();
     return ((stepIndex + stepProgress) / totalSteps).clamp(0, 1).toDouble();
   }
 
   bool _isFfmpegProgressStep(CommandStep step) {
-    return p.basename(step.executable).toLowerCase() == 'ffmpeg.exe';
+    return step.fontSubsetStep == null &&
+        p.basename(step.executable).toLowerCase() == 'ffmpeg.exe';
+  }
+
+  String _subsetStepDescription(
+    List<CommandStep> steps, {
+    required int currentStepIndex,
+  }) {
+    var totalSubsetSteps = 0;
+    var currentSubsetOrdinal = 0;
+    for (var i = 0; i < steps.length; i++) {
+      if (steps[i].fontSubsetStep == null) {
+        continue;
+      }
+      totalSubsetSteps++;
+      if (i <= currentStepIndex) {
+        currentSubsetOrdinal++;
+      }
+    }
+    return '子集化字幕字体 ($currentSubsetOrdinal/$totalSubsetSteps)';
+  }
+
+  void _writeSubsetStepCommandLines(
+    StringBuffer buffer,
+    FontSubsetStepPlan plan,
+  ) {
+    buffer
+      ..writeln(renderCommand(plan.pyftsubsetPath, plan.pyftsubsetArguments))
+      ..writeln(renderCommand(plan.ttxPath, plan.ttxDumpArguments))
+      ..writeln(renderCommand(plan.ttxPath, plan.ttxCompileArguments));
   }
 }

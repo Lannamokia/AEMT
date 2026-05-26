@@ -575,7 +575,7 @@ design 中编号独立成子任务，方便逐条追溯。
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 17. _QueueRunner：子集化步骤、取消与错误捕获
-  - [ ] 17.1 Add `子集化字幕字体` `CommandStep` handling
+  - [x] 17.1 Add `子集化字幕字体` `CommandStep` handling
     - One step per font, the step's execution wraps the three
       TTX_Pipeline sub-commands in order
       (`pyftsubset` → `ttx -f -o` → `ttx -f -b`); the in-memory
@@ -590,7 +590,7 @@ design 中编号独立成子任务，方便逐条追溯。
       other steps preserve current parsing behavior
     - _Requirements: 19.1, 19.2, 19.3, 19.6_
 
-  - [ ] 17.2 Wire cancel signal to `subsetFonts`
+  - [x] 17.2 Wire cancel signal to `subsetFonts`
     - Forward `stopQueueRequested` as `cancelSignal`; ensure in-flight
       `pyftsubset` is killed within 500ms; mark task
       `TaskStatus.cancelled`
@@ -605,11 +605,11 @@ design 中编号独立成子任务，方便逐条追溯。
       `tonemapMode=off` on HDR source
     - _Requirements: 22.5, 27.4, 27.5_
 
-  - [ ] 17.4 Write property test for subset-step progress accounting
+  - [x] 17.4 Write property test for subset-step progress accounting
     - **Property 21: Subset-step progress accounting**
     - **Validates: Requirements 19.1, 19.2, 19.3, 19.6**
 
-  - [ ] 17.5 Write integration test for cancellation
+  - [x] 17.5 Write integration test for cancellation
     - **Property 23: Cancellation terminates pyftsubset promptly**
     - **Validates: Requirements 20.5**
 

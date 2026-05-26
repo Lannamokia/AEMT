@@ -19,6 +19,13 @@ part 'controller_queue_runner.dart';
 part 'controller_export_config.dart';
 part 'controller_task_planner.dart';
 
+typedef DebugTaskPlanBuilder = Future<TaskPlan> Function(ExportTask task);
+typedef DebugSubsetStepExecutor =
+    Future<({String verifyLogLine, String? fsTypeWarning})> Function(
+      FontSubsetStepPlan plan,
+      Stream<void> cancelSignal,
+    );
+
 class AemtController extends ChangeNotifier {
   AemtController({@visibleForTesting bool initializePlayer = true})
     : _playerInitialized = initializePlayer {
@@ -130,6 +137,12 @@ class AemtController extends ChangeNotifier {
   bool continueOnMissingFont = false;
   bool sourceHanEllipsisFix = true;
   bool _hdrToneMappingNoticeShown = false;
+  final StreamController<void> _queueCancelSignal =
+      StreamController<void>.broadcast(sync: true);
+  @visibleForTesting
+  DebugTaskPlanBuilder? debugTaskPlanBuilder;
+  @visibleForTesting
+  DebugSubsetStepExecutor? debugSubsetStepExecutor;
   final Map<String, EncoderTuning> encoderTunings = <String, EncoderTuning>{
     'libx264': const EncoderTuning(
       key: 'libx264',
@@ -805,6 +818,7 @@ class AemtController extends ChangeNotifier {
       unawaited(player.dispose());
     }
     unawaited(_mediaOps.resetPreviewSubtitleArtifacts());
+    unawaited(_queueCancelSignal.close());
     super.dispose();
   }
 
