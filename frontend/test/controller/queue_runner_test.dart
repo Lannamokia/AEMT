@@ -55,7 +55,7 @@ Future<void> main(List<String> args) async {
   final String subsetDir = p.join(workDir.path, 'subsetted');
   return CommandStep(
     executable: Platform.resolvedExecutable,
-    arguments: <String>[scriptPath],
+    arguments: <String>['--disable-dart-dev', scriptPath],
     description: '子集化字幕字体',
     fontSubsetStep: FontSubsetStepPlan(
       originalFont: ResolvedFontFile(
@@ -83,6 +83,17 @@ Future<void> main(List<String> args) async {
       subsetTempPath: p.join(subsetDir, 'slow.subset_tmp_.ttf'),
       ttxXmlPath: p.join(subsetDir, 'slow.ttx'),
     ),
+  );
+}
+
+CommandStep _toneMappingFailureStep() {
+  return CommandStep(
+    executable: 'cmd.exe',
+    arguments: const <String>[
+      '/c',
+      'echo Cannot find a matching filter: zscale 1>&2 & exit /b 1',
+    ],
+    description: '导出内嵌 MP4',
   );
 }
 
@@ -186,4 +197,46 @@ void main() {
     expect(controller.tasks.first.status, TaskStatus.cancelled);
     expect(controller.tasks.first.error, '任务已停止');
   });
+
+  test(
+    'zscale stderr failure marks task failed with tone-mapping advice',
+    () async {
+      final AemtController controller = AemtController(initializePlayer: false);
+      final CommandStep step = _toneMappingFailureStep();
+
+      controller.debugTaskPlanBuilder = (ExportTask task) async {
+        return TaskPlan(
+          outputPath: task.outputPath,
+          commandPreview: 'preview',
+          steps: <CommandStep>[step],
+          workingDirectory: '.',
+          expectedDuration: const Duration(seconds: 1),
+        );
+      };
+
+      controller.tasks.add(
+        const ExportTask(
+          id: 't3',
+          profile: ExportProfile.hardsubMp4,
+          bindingKeys: <String>['chs'],
+          label: 'task',
+          outputPath: 'out.mp4',
+          status: TaskStatus.queued,
+          progress: 0,
+          currentStep: '',
+          commandPreview: '',
+          log: '',
+        ),
+      );
+
+      await controller.runQueue();
+
+      expect(controller.tasks.first.status, TaskStatus.failed);
+      expect(controller.tasks.first.error, '色调映射执行失败');
+      expect(
+        controller.tasks.first.log,
+        contains('ERROR: 色调映射执行失败，建议检查 ffmpeg 是否启用 libzimg'),
+      );
+    },
+  );
 }

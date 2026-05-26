@@ -365,7 +365,11 @@ class _TaskPlanner {
       ],
       workingDirectory: workDir,
       expectedDuration: info.duration,
-      initialLogLines: fontPipeline.warnings,
+      initialLogLines: <String>[
+        ...toneMapping.logLines,
+        ..._hdrToneMappingUserChoiceLogLines(toneMapping.sourceClass),
+        ...fontPipeline.warnings,
+      ],
     );
   }
 
@@ -575,7 +579,11 @@ class _TaskPlanner {
       ],
       workingDirectory: workDir,
       expectedDuration: info.duration,
-      initialLogLines: fontPipeline.warnings,
+      initialLogLines: <String>[
+        ...toneMapping.logLines,
+        ..._hdrToneMappingUserChoiceLogLines(toneMapping.sourceClass),
+        ...fontPipeline.warnings,
+      ],
     );
   }
 
@@ -1366,6 +1374,18 @@ class _TaskPlanner {
       );
     }
     return comments;
+  }
+
+  List<String> _hdrToneMappingUserChoiceLogLines(SourceColorClass sourceClass) {
+    if (_controller.toneMappingConfig.tonemapMode != 'off') {
+      return const <String>[];
+    }
+    if (sourceClass != SourceColorClass.hdrPq &&
+        sourceClass != SourceColorClass.hdrHlg &&
+        sourceClass != SourceColorClass.dolbyVision) {
+      return const <String>[];
+    }
+    return const <String>['INFO: 用户已关闭 HDR 源的色调映射，输出可能偏色'];
   }
 
   String _renderCommandPreview(

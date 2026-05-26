@@ -240,6 +240,57 @@ void main() {
     );
     toneBad.dispose();
   });
+
+  test('Dolby Vision and HDR-off tone-mapping log lines are planned', () async {
+    final Directory workDir = await Directory.systemTemp.createTemp(
+      'aemt_tonemap_log_',
+    );
+    final String srtPath = p.join(workDir.path, 'tone.srt');
+    await File(srtPath).writeAsString('1\n00:00:00,000 --> 00:00:01,000\nHi\n');
+
+    final AemtController dolby = _controllerForPlan(
+      srtPath,
+      videoInfo: const VideoStreamInfo(dolbyVision: true),
+    );
+    dolby.debugFontResolver =
+        (List<String> importedFontSources, String workDir) async =>
+            const <ResolvedFontFile>[];
+    dolby.debugAttachmentExtractor = (MediaInfo info, String workDir) async =>
+        const <ResolvedFontFile>[];
+
+    final TaskPlan dolbyPlan = await dolby.debugBuildTaskPlan(_task());
+    expect(
+      dolbyPlan.initialLogLines,
+      contains('WARN: 检测到 Dolby Vision，AEMT 仅按 PQ 基础层处理'),
+    );
+    dolby.dispose();
+
+    final AemtController hdrOff = _controllerForPlan(
+      srtPath,
+      videoInfo: const VideoStreamInfo(colorTransfer: 'smpte2084'),
+    );
+    hdrOff.debugFontResolver =
+        (List<String> importedFontSources, String workDir) async =>
+            const <ResolvedFontFile>[];
+    hdrOff.debugAttachmentExtractor = (MediaInfo info, String workDir) async =>
+        const <ResolvedFontFile>[];
+    hdrOff.setToneMappingConfig(
+      const ToneMappingConfig.defaultBt709().copyWith(
+        tonemapMode: 'off',
+        outputPrimaries: 'source',
+        outputTransfer: 'source',
+        outputRange: 'source',
+      ),
+    );
+
+    final TaskPlan hdrOffPlan = await hdrOff.debugBuildTaskPlan(_task());
+    expect(
+      hdrOffPlan.initialLogLines,
+      contains('INFO: 用户已关闭 HDR 源的色调映射，输出可能偏色'),
+    );
+    expect(hdrOffPlan.commandPreview, isNot(contains('# tonemap')));
+    hdrOff.dispose();
+  });
 }
 
 const ResolvedFontFile _exampleFont = ResolvedFontFile(

@@ -114,6 +114,7 @@ class _QueueRunner {
         buffer.writeln(line);
       }
       var exitCode = 0;
+      var toneMappingExecutionFailed = false;
       try {
         for (
           var stepIndex = 0;
@@ -187,6 +188,9 @@ class _QueueRunner {
               .transform(utf8.decoder)
               .transform(const LineSplitter())
               .listen((String line) {
+                if (_isToneMappingExecutionFailure(line)) {
+                  toneMappingExecutionFailed = true;
+                }
                 _handleTaskOutputLine(
                   taskIndex: taskIndex,
                   line: line,
@@ -214,6 +218,15 @@ class _QueueRunner {
           exitCode = await process.exitCode;
           await stdoutSub.cancel();
           await stderrSub.cancel();
+          toneMappingExecutionFailed =
+              toneMappingExecutionFailed ||
+              _isToneMappingExecutionFailure(buffer.toString());
+          if (toneMappingExecutionFailed) {
+            buffer.writeln('ERROR: 色调映射执行失败，建议检查 ffmpeg 是否启用 libzimg');
+            _controller.tasks[taskIndex] = _controller.tasks[taskIndex]
+                .copyWith(log: buffer.toString());
+            _controller._markChanged();
+          }
           if (exitCode == 0) {
             _controller.tasks[taskIndex] = _controller.tasks[taskIndex]
                 .copyWith(
@@ -221,6 +234,10 @@ class _QueueRunner {
                   log: buffer.toString(),
                 );
             _controller._markChanged();
+          }
+          if (toneMappingExecutionFailed) {
+            exitCode = exitCode == 0 ? 1 : exitCode;
+            break;
           }
           if (exitCode != 0 || _controller.stopQueueRequested) {
             break;
@@ -241,7 +258,11 @@ class _QueueRunner {
                   : _controller.tasks[taskIndex].currentStep),
         error: _controller.stopQueueRequested
             ? '任务已停止'
-            : (exitCode == 0 ? null : '退出码 $exitCode'),
+            : (exitCode == 0
+                  ? null
+                  : (toneMappingExecutionFailed
+                        ? '色调映射执行失败'
+                        : '退出码 $exitCode')),
         log: buffer.toString(),
       );
       _controller._markChanged();
@@ -378,6 +399,11 @@ class _QueueRunner {
   bool _isFfmpegProgressStep(CommandStep step) {
     return step.fontSubsetStep == null &&
         p.basename(step.executable).toLowerCase() == 'ffmpeg.exe';
+  }
+
+  bool _isToneMappingExecutionFailure(String line) {
+    return line.contains('Cannot find a matching filter') ||
+        line.contains('zscale: command not found');
   }
 
   String _subsetStepDescription(

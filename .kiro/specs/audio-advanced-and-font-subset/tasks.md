@@ -574,7 +574,7 @@ design 中编号独立成子任务，方便逐条追溯。
 - [x] 16. Checkpoint - planner end-to-end on golden snapshots
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 17. _QueueRunner：子集化步骤、取消与错误捕获
+- [x] 17. _QueueRunner：子集化步骤、取消与错误捕获
   - [x] 17.1 Add `子集化字幕字体` `CommandStep` handling
     - One step per font, the step's execution wraps the three
       TTX_Pipeline sub-commands in order
@@ -596,7 +596,7 @@ design 中编号独立成子任务，方便逐条追溯。
       `TaskStatus.cancelled`
     - _Requirements: 20.5_
 
-  - [ ] 17.3 Detect zscale / tonemap stderr failures
+  - [x] 17.3 Detect zscale / tonemap stderr failures
     - On stderr containing `Cannot find a matching filter` or
       `zscale: command not found`, mark task failed and append
       `ERROR: 色调映射执行失败，建议检查 ffmpeg 是否启用 libzimg`
