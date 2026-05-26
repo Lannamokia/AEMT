@@ -440,8 +440,8 @@ design 中编号独立成子任务，方便逐条追溯。
       3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.1, 5.2,
       5.3, 5.4, 5.5, 5.6, 5.7, 6.5**
 
-- [ ] 13. _TaskPlanner：视频码控参数
-  - [ ] 13.1 Implement `_buildVideoRateControlArguments(sel, cfg)`
+- [x] 13. _TaskPlanner：视频码控参数
+  - [x] 13.1 Implement `_buildVideoRateControlArguments(sel, cfg)`
     - Per-encoder branches per Req 7.4-7.7 (CRF emits `-crf` only;
       CBR emits `-b:v / -maxrate / -minrate / -bufsize` plus rate
       switch; VBR emits `-b:v` plus per-encoder rate switch + maxrate
@@ -452,7 +452,7 @@ design 中编号独立成子任务，方便逐条追溯。
       `_buildVideoCodecArguments(sel)` for byte-equivalence
     - _Requirements: 7.4, 7.5, 7.6, 7.7, 7.8, 7.9_
 
-  - [ ] 13.2 Write property test for video rate-control args
+  - [x] 13.2 Write property test for video rate-control args
     - **Property 7: Video rate-control command construction**
     - **Validates: Requirements 7.4, 7.5, 7.6, 7.7**
 

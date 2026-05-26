@@ -136,7 +136,11 @@ class _TaskPlanner {
       _controller.outputFps.trim(),
       '-c:v',
       encoder.encoder,
-      ..._buildVideoCodecArguments(encoder),
+      ..._buildVideoRateControlArguments(
+        encoder,
+        _controller.videoEncodingConfigs[encoder.encoder] ??
+            VideoEncodingConfig.defaultsFor(encoder.encoder),
+      ),
       ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
       '-movflags',
       '+faststart',
@@ -265,7 +269,11 @@ class _TaskPlanner {
       _buildVideoScaleFilter(),
       '-r',
       _controller.outputFps.trim(),
-      ..._buildVideoCodecArguments(encoder),
+      ..._buildVideoRateControlArguments(
+        encoder,
+        _controller.videoEncodingConfigs[encoder.encoder] ??
+            VideoEncodingConfig.defaultsFor(encoder.encoder),
+      ),
       ..._buildPixelFormatArguments(encoder),
       ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
       '-c:s',
@@ -565,18 +573,80 @@ class _TaskPlanner {
     return value.toString();
   }
 
-  List<String> _buildVideoCodecArguments(_EncoderSelection selection) {
+  List<String> _buildVideoRateControlArguments(
+    _EncoderSelection selection,
+    VideoEncodingConfig config,
+  ) {
+    if (!config.userOverridden) {
+      return _buildVideoCodecArguments(selection);
+    }
+    final List<String> supported =
+        kSupportedRcModes[selection.encoder] ?? const <String>[];
+    if (!supported.contains(config.mode)) {
+      throw Exception('当前编码器 ${selection.encoder} 不支持模式 ${config.mode}');
+    }
+    switch (config.mode) {
+      case 'CRF':
+        _validateVideoRange('crf', config.crf);
+        return <String>[
+          '-crf',
+          config.crf.toString(),
+          ..._buildEncoderTuningArguments(selection),
+        ];
+      case 'CBR':
+        _validateVideoBitrate(config.bitrate);
+        final String maxrate = config.maxrate.trim().isEmpty
+            ? config.bitrate.trim()
+            : config.maxrate.trim();
+        _validateVideoBitrate(maxrate);
+        final String bufsize = config.bufsize.trim().isEmpty
+            ? _doubleBitrate(config.bitrate.trim())
+            : config.bufsize.trim();
+        _validateVideoBitrate(bufsize);
+        return <String>[
+          '-b:v',
+          config.bitrate.trim(),
+          '-maxrate',
+          maxrate,
+          '-minrate',
+          config.bitrate.trim(),
+          '-bufsize',
+          bufsize,
+          ..._buildEncoderRateSwitch(selection, cbr: true),
+          ..._buildEncoderTuningArguments(selection),
+        ];
+      case 'VBR':
+        _validateVideoBitrate(config.bitrate);
+        final String maxrate = config.maxrate.trim();
+        final String bufsize = config.bufsize.trim();
+        _validateVideoBitrate(maxrate);
+        _validateVideoBitrate(bufsize);
+        return <String>[
+          '-b:v',
+          config.bitrate.trim(),
+          ..._buildEncoderRateSwitch(selection, cbr: false),
+          '-maxrate',
+          maxrate,
+          '-bufsize',
+          bufsize,
+          ..._buildEncoderTuningArguments(selection),
+        ];
+      case 'CQP':
+        for (final int value in <int>[config.qpI, config.qpP, config.qpB]) {
+          _validateVideoRange('qp', value);
+        }
+        return <String>[
+          ..._buildCqpArguments(selection, config),
+          ..._buildEncoderTuningArguments(selection),
+        ];
+      default:
+        throw Exception('当前编码器 ${selection.encoder} 不支持模式 ${config.mode}');
+    }
+  }
+
+  List<String> _buildEncoderTuningArguments(_EncoderSelection selection) {
     final EncoderTuning tuning = _controller.encoderTunings[selection.encoder]!;
-    final List<String> args = <String>[
-      '-b:v',
-      selection.codecFamily == 'hevc'
-          ? _controller.hevcBitrate
-          : _controller.avcBitrate,
-      '-maxrate',
-      selection.codecFamily == 'hevc'
-          ? _controller.hevcMaxrate
-          : _controller.avcMaxrate,
-    ];
+    final List<String> args = <String>[];
     switch (selection.encoder) {
       case 'libx264':
       case 'libx265':
@@ -605,6 +675,101 @@ class _TaskPlanner {
           args.addAll(<String>['-tune', tuning.tune]);
       }
     }
+    return args;
+  }
+
+  List<String> _buildEncoderRateSwitch(
+    _EncoderSelection selection, {
+    required bool cbr,
+  }) {
+    final String mode = cbr ? 'cbr' : 'vbr';
+    if (selection.encoder.contains('nvenc')) {
+      return <String>['-rc', mode];
+    }
+    if (selection.encoder.contains('qsv')) {
+      return <String>['-rc:v', mode];
+    }
+    if (selection.encoder.contains('amf')) {
+      return <String>['-rc_mode', cbr ? 'cbr' : 'vbr_peak'];
+    }
+    return const <String>[];
+  }
+
+  List<String> _buildCqpArguments(
+    _EncoderSelection selection,
+    VideoEncodingConfig config,
+  ) {
+    if (selection.encoder.contains('nvenc')) {
+      return <String>[
+        '-rc',
+        'constqp',
+        '-qp',
+        config.qpI.toString(),
+        '-init_qpP',
+        config.qpP.toString(),
+        '-init_qpB',
+        config.qpB.toString(),
+      ];
+    }
+    if (selection.encoder.contains('qsv')) {
+      return <String>[
+        '-rc:v',
+        'cqp',
+        '-q',
+        config.qpI.toString(),
+        '-global_quality',
+        config.qpI.toString(),
+      ];
+    }
+    if (selection.encoder.contains('amf')) {
+      return <String>[
+        '-rc_mode',
+        'cqp',
+        '-qp_i',
+        config.qpI.toString(),
+        '-qp_p',
+        config.qpP.toString(),
+        '-qp_b',
+        config.qpB.toString(),
+      ];
+    }
+    throw Exception('当前编码器 ${selection.encoder} 不支持模式 CQP');
+  }
+
+  void _validateVideoBitrate(String value) {
+    if (!RegExp(r'^\d+[kKmM]$').hasMatch(value.trim())) {
+      throw Exception('视频码率格式非法');
+    }
+  }
+
+  void _validateVideoRange(String field, int value) {
+    if (value < 0 || value > 51) {
+      throw Exception('$field 范围应为 0-51');
+    }
+  }
+
+  String _doubleBitrate(String bitrate) {
+    final RegExpMatch? match = RegExp(
+      r'^(\d+)([kKmM])$',
+    ).firstMatch(bitrate.trim());
+    if (match == null) {
+      throw Exception('视频码率格式非法');
+    }
+    return '${int.parse(match.group(1)!) * 2}${match.group(2)!}';
+  }
+
+  List<String> _buildVideoCodecArguments(_EncoderSelection selection) {
+    final List<String> args = <String>[
+      '-b:v',
+      selection.codecFamily == 'hevc'
+          ? _controller.hevcBitrate
+          : _controller.avcBitrate,
+      '-maxrate',
+      selection.codecFamily == 'hevc'
+          ? _controller.hevcMaxrate
+          : _controller.avcMaxrate,
+    ];
+    args.addAll(_buildEncoderTuningArguments(selection));
     return args;
   }
 

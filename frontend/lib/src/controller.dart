@@ -717,6 +717,18 @@ class AemtController extends ChangeNotifier {
     return _taskPlanner.shouldUseLegacyAudioPath(streams);
   }
 
+  @visibleForTesting
+  List<String> debugBuildVideoRateControlArguments(
+    String encoder,
+    String codecFamily,
+    VideoEncodingConfig config,
+  ) {
+    return _taskPlanner._buildVideoRateControlArguments(
+      _EncoderSelection(encoder: encoder, codecFamily: codecFamily),
+      config,
+    );
+  }
+
   void _markChanged() {
     notifyListeners();
   }
