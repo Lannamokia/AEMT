@@ -188,7 +188,7 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Validates: Requirements 11.1, 11.3, 11.4, 11.7**
 
 - [ ] 7. 字体服务：子集化执行
-  - [ ] 7.1 Implement `subsetFonts(index, matched, workDir, ...)`
+  - [x] 7.1 Implement `subsetFonts(index, matched, workDir, ...)`
     returning `SubsetResult { fonts, renameMap }`
     - Signature additions: `pyftsubsetPath`, `ttxPath`,
       `aemtVersion: String`, `fontToolsVersion: Version?`,
@@ -228,7 +228,7 @@ design 中编号独立成子任务，方便逐条追溯。
       14.8, 14.9, 14.10, 18.4, 18.5, 20.4, 20.5, 28.1, 28.2, 28.3,
       28.5, 28.6, 28.8_
 
-  - [ ] 7.2 Implement subset-font cmap verification
+  - [x] 7.2 Implement subset-font cmap verification
     - Reuse sfnt reader + minimal `cmap` parser to assert
       `subset.cmap.codepoints ⊇ index[fontname]`
     - Verify on the **final ttx-recompiled** `<base>.subset.<ext>`
@@ -238,7 +238,7 @@ design 中编号独立成子任务，方便逐条追溯。
       verification can be skipped via flag → `子集化校验已跳过`
     - _Requirements: 17.1, 17.2, 17.3, 17.4_
 
-  - [ ] 7.3 Implement license sidecar + fsType warning
+  - [x] 7.3 Implement license sidecar + fsType warning
     - Write `<workDir>/subsetted/LICENSE.txt` per font using NameID 13
       or the placeholder `原字体未提供许可信息，仅做字符子集化处理。`
     - On OS/2 `fsType` bit 1 set, emit
@@ -283,7 +283,7 @@ design 中编号独立成子任务，方便逐条追溯。
       shared across fonts → guarantees per-task uniqueness
     - _Requirements: 28.2_
 
-  - [ ] 7.6 Write property test for pyftsubset command construction
+  - [x] 7.6 Write property test for pyftsubset command construction
     - **Property 12: pyftsubset command construction**
     - **Validates: Requirements 14.1, 14.2, 14.3, 18.1**
 
@@ -296,7 +296,7 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 14: Empty codepoint set still yields a valid subset file**
     - **Validates: Requirements 14.4, 14.6**
 
-  - [ ] 7.9 Write property test for license sidecar generation
+  - [x] 7.9 Write property test for license sidecar generation
     - **Property 22: License sidecar generation**
     - **Validates: Requirements 18.2, 18.3**
 

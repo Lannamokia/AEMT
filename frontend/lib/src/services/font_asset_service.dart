@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +10,7 @@ import 'package:path/path.dart' as p;
 import '../models.dart';
 import '../utils/export_utils.dart';
 import 'font_asset_service_internal/sfnt_name_reader.dart';
+import 'font_asset_service_internal/ttx_xml_modifier.dart';
 import 'font_asset_service_internal/vert_mapping.dart';
 
 class FontAssetService {
@@ -258,6 +260,234 @@ class FontAssetService {
       }
     }
     return FontMatchResult(matched: matched, missing: missing);
+  }
+
+  List<FontSubsetStepPlan> planSubsetFontSteps(
+    SubtitleCharIndex index,
+    Map<String, ResolvedFontFile> matchedFontsByNormalizedFontname,
+    String workDir, {
+    required String pyftsubsetPath,
+    required String ttxPath,
+    required String aemtVersion,
+    required String? fontToolsVersion,
+    bool sourceHanEllipsisFix = true,
+    bool verifyAfterSubset = true,
+  }) {
+    final Set<String> usedNames = <String>{};
+    final String subsetDir = p.join(workDir, 'subsetted');
+    return <FontSubsetStepPlan>[
+      for (final MapEntry<String, ResolvedFontFile> entry
+          in matchedFontsByNormalizedFontname.entries)
+        _buildSubsetStepPlan(
+          normalizedKey: entry.key,
+          originalFont: entry.value,
+          codepoints: index.codepointsByFontname[entry.key] ?? <int>{},
+          subsetDir: subsetDir,
+          pyftsubsetPath: pyftsubsetPath,
+          ttxPath: ttxPath,
+          aemtVersion: aemtVersion,
+          fontToolsVersion: fontToolsVersion,
+          sourceHanEllipsisFix: sourceHanEllipsisFix,
+          verifyAfterSubset: verifyAfterSubset,
+          usedNames: usedNames,
+        ),
+    ];
+  }
+
+  Future<SubsetResult> subsetFonts(
+    SubtitleCharIndex index,
+    Map<String, ResolvedFontFile> matchedFontsByNormalizedFontname,
+    String workDir, {
+    required String pyftsubsetPath,
+    required String ttxPath,
+    required Stream<void> cancelSignal,
+    required String aemtVersion,
+    required String? fontToolsVersion,
+    bool sourceHanEllipsisFix = true,
+    bool verifyAfterSubset = true,
+  }) async {
+    final List<FontSubsetStepPlan> steps = planSubsetFontSteps(
+      index,
+      matchedFontsByNormalizedFontname,
+      workDir,
+      pyftsubsetPath: pyftsubsetPath,
+      ttxPath: ttxPath,
+      aemtVersion: aemtVersion,
+      fontToolsVersion: fontToolsVersion,
+      sourceHanEllipsisFix: sourceHanEllipsisFix,
+      verifyAfterSubset: verifyAfterSubset,
+    );
+    final List<ResolvedFontFile> fonts = <ResolvedFontFile>[];
+    final Map<String, String> renameMap = <String, String>{};
+    for (final FontSubsetStepPlan step in steps) {
+      await executeSubsetFontStep(step, cancelSignal: cancelSignal);
+      fonts.add(step.outputFont);
+      renameMap[step.normalizedKey] = step.randomName;
+    }
+    return SubsetResult(fonts: fonts, renameMap: renameMap);
+  }
+
+  Future<({String verifyLogLine, String? fsTypeWarning})> executeSubsetFontStep(
+    FontSubsetStepPlan plan, {
+    required Stream<void> cancelSignal,
+  }) async {
+    await Directory(plan.subsetDir).create(recursive: true);
+    await _appendLicenseSidecar(plan);
+    await File(plan.codepointsFilePath).writeAsString(
+      String.fromCharCodes(plan.codepoints),
+      encoding: utf8,
+    );
+    await _runProcessOrThrow(
+      plan.pyftsubsetPath,
+      plan.pyftsubsetArguments,
+      plan.originalFont.path,
+      cancelSignal,
+    );
+    await _runProcessOrThrow(
+      plan.ttxPath,
+      plan.ttxDumpArguments,
+      plan.originalFont.path,
+      cancelSignal,
+    );
+    final File ttxFile = File(plan.ttxXmlPath);
+    if (!ttxFile.existsSync()) {
+      throw Exception('${plan.originalFont.path}: $kFontForgeAdvice');
+    }
+    final String xmlText = await ttxFile.readAsString();
+    final TtxModifyResult modified = modifyTtxXml(
+      xmlText,
+      randomName: plan.randomName,
+      aemtVersion: plan.aemtVersion,
+      fontToolsVersion: plan.fontToolsVersion,
+      originalFontPath: plan.originalFont.path,
+      sourceHanEllipsisFix: plan.sourceHanEllipsisFix,
+    );
+    await ttxFile.writeAsString(modified.xmlText);
+    await _runProcessOrThrow(
+      plan.ttxPath,
+      plan.ttxCompileArguments,
+      plan.originalFont.path,
+      cancelSignal,
+    );
+    if (!File(plan.outputFont.path).existsSync()) {
+      throw Exception('${plan.originalFont.path}: $kFontForgeAdvice');
+    }
+    if (plan.verifyAfterSubset) {
+      final Set<int> cmap = await readSfntFontFaces(plan.outputFont.path)
+          .then((List<SfntFontFace> faces) => faces
+              .expand((SfntFontFace face) => face.cmapCodepoints)
+              .toSet());
+      final Set<int> missing = plan.codepoints
+          .where((int codepoint) => !cmap.contains(codepoint))
+          .toSet();
+      if (missing.isNotEmpty) {
+        throw Exception(
+          '${plan.originalFont.path}: subset FAIL: missing ${missing.length} codepoints',
+        );
+      }
+    }
+    return (
+      verifyLogLine:
+          plan.verifyAfterSubset
+              ? 'subset OK: ${plan.originalFont.fileName} (${plan.codepoints.length})'
+              : '子集化校验已跳过',
+      fsTypeWarning: plan.fsTypeRestricted
+          ? '字体 ${plan.originalFont.fileName} 标记为受限嵌入...'
+          : null,
+    );
+  }
+
+  Future<void> _appendLicenseSidecar(FontSubsetStepPlan plan) async {
+    final String text = plan.originalFont.licenseDescription.trim().isEmpty
+        ? '原字体未提供许可信息，仅做字符子集化处理。'
+        : plan.originalFont.licenseDescription.trim();
+    final File file = File(p.join(plan.subsetDir, 'LICENSE.txt'));
+    final String entry = [
+      'Font: ${plan.originalFont.fileName}',
+      text,
+      '',
+    ].join('\n');
+    await file.writeAsString(entry, mode: FileMode.append, encoding: utf8);
+  }
+
+  FontSubsetStepPlan _buildSubsetStepPlan({
+    required String normalizedKey,
+    required ResolvedFontFile originalFont,
+    required Set<int> codepoints,
+    required String subsetDir,
+    required String pyftsubsetPath,
+    required String ttxPath,
+    required String aemtVersion,
+    required String? fontToolsVersion,
+    required bool sourceHanEllipsisFix,
+    required bool verifyAfterSubset,
+    required Set<String> usedNames,
+  }) {
+    final String randomName = generateRandomName(usedNames);
+    final String baseName = p.basenameWithoutExtension(originalFont.fileName);
+    final String extension = p.extension(originalFont.fileName);
+    final String subsetTempPath = p.join(
+      subsetDir,
+      '$baseName.subset_tmp_$extension',
+    );
+    final String ttxXmlPath = p.join(subsetDir, '$baseName.ttx');
+    final String outputPath = p.join(subsetDir, '$baseName.subset$extension');
+    return FontSubsetStepPlan(
+      originalFont: originalFont,
+      outputFont: originalFont.copyWith(
+        path: outputPath,
+        source: FontSourceKind.subsetted,
+      ),
+      normalizedKey: normalizedKey,
+      randomName: randomName,
+      codepoints: (codepoints.toList()..sort()),
+      pyftsubsetPath: pyftsubsetPath,
+      ttxPath: ttxPath,
+      aemtVersion: aemtVersion,
+      fontToolsVersion: fontToolsVersion,
+      sourceHanEllipsisFix: sourceHanEllipsisFix,
+      verifyAfterSubset: verifyAfterSubset,
+      fsTypeRestricted: (originalFont.fsType & 0x0002) != 0,
+      subsetDir: subsetDir,
+      codepointsFilePath: p.join(subsetDir, '$baseName.unicodes.txt'),
+      subsetTempPath: subsetTempPath,
+      ttxXmlPath: ttxXmlPath,
+    );
+  }
+
+  Future<void> _runProcessOrThrow(
+    String executable,
+    List<String> arguments,
+    String originalFontPath,
+    Stream<void> cancelSignal,
+  ) async {
+    final Process process = await Process.start(
+      executable,
+      arguments,
+      runInShell: false,
+      environment: const <String, String>{'PYTHONIOENCODING': 'utf-8'},
+    );
+    final StreamSubscription<void> cancelSub = cancelSignal.listen((_) {
+      process.kill(ProcessSignal.sigterm);
+    });
+    final List<int> stderrBytes = <int>[];
+    final StreamSubscription<List<int>> stderrSub = process.stderr.listen(
+      stderrBytes.addAll,
+    );
+    final StreamSubscription<List<int>> stdoutSub = process.stdout.listen((_) {});
+    final int exitCode = await process.exitCode;
+    await cancelSub.cancel();
+    await stdoutSub.cancel();
+    await stderrSub.cancel();
+    if (exitCode != 0) {
+      final String stderr = utf8.decode(
+        stderrBytes.length > 4096
+            ? stderrBytes.sublist(stderrBytes.length - 4096)
+            : stderrBytes,
+        allowMalformed: true,
+      );
+      throw Exception('$originalFontPath: $stderr\n$kFontForgeAdvice');
+    }
   }
 
   Future<List<ResolvedFontFile>> _enrichFont(ResolvedFontFile file) async {

@@ -860,6 +860,80 @@ class SubsetResult {
   final Map<String, String> renameMap;
 }
 
+class FontSubsetStepPlan {
+  const FontSubsetStepPlan({
+    required this.originalFont,
+    required this.outputFont,
+    required this.normalizedKey,
+    required this.randomName,
+    required this.codepoints,
+    required this.pyftsubsetPath,
+    required this.ttxPath,
+    required this.aemtVersion,
+    required this.fontToolsVersion,
+    required this.sourceHanEllipsisFix,
+    required this.verifyAfterSubset,
+    required this.fsTypeRestricted,
+    required this.subsetDir,
+    required this.codepointsFilePath,
+    required this.subsetTempPath,
+    required this.ttxXmlPath,
+  });
+
+  final ResolvedFontFile originalFont;
+  final ResolvedFontFile outputFont;
+  final String normalizedKey;
+  final String randomName;
+  final List<int> codepoints;
+  final String pyftsubsetPath;
+  final String ttxPath;
+  final String aemtVersion;
+  final String? fontToolsVersion;
+  final bool sourceHanEllipsisFix;
+  final bool verifyAfterSubset;
+  final bool fsTypeRestricted;
+  final String subsetDir;
+  final String codepointsFilePath;
+  final String subsetTempPath;
+  final String ttxXmlPath;
+
+  List<String> get pyftsubsetArguments {
+    return <String>[
+      originalFont.path,
+      '--unicodes-file=$codepointsFilePath',
+      '--output-file=$subsetTempPath',
+      '--no-hinting',
+      '--retain-gids',
+      '--layout-features=vert,vrtr,vrt2,vkna',
+      '--name-IDs=*',
+      '--name-languages=*',
+      '--drop-tables=',
+      '--font-number=${originalFont.trackIndex}',
+      ...fontToolsCompatibilityFlags(fontToolsVersion),
+    ];
+  }
+
+  List<String> get ttxDumpArguments {
+    return <String>['-f', '-o', ttxXmlPath, subsetTempPath];
+  }
+
+  List<String> get ttxCompileArguments {
+    return <String>['-f', '-b', ttxXmlPath];
+  }
+}
+
+List<String> fontToolsCompatibilityFlags(String? versionText) {
+  final Version? version = versionText == null ? null : Version.tryParse(versionText);
+  final List<String> flags = <String>[];
+  if (version == null || version > const Version(4, 44, 0)) {
+    flags.add('--no-prune-codepage-ranges');
+  }
+  if (version == null || version > const Version(4, 60, 0)) {
+    flags.add('--drop-tables+=BASE');
+  }
+  return flags;
+}
+
 class EncodingSettingsSnapshot {
   const EncodingSettingsSnapshot({
     required this.compressionMode,
@@ -1492,11 +1566,13 @@ class CommandStep {
     required this.executable,
     required this.arguments,
     required this.description,
+    this.fontSubsetStep,
   });
 
   final String executable;
   final List<String> arguments;
   final String description;
+  final FontSubsetStepPlan? fontSubsetStep;
 }
 
 class TaskPlan {

@@ -173,9 +173,6 @@ class _QueueRunner {
       } finally {
         _controller._activeProcess = null;
       }
-      try {
-        await Directory(resolvedPlan.workingDirectory).delete(recursive: true);
-      } catch (_) {}
       _controller.tasks[taskIndex] = _controller.tasks[taskIndex].copyWith(
         status: _controller.stopQueueRequested
             ? TaskStatus.cancelled
