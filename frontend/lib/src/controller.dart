@@ -729,6 +729,26 @@ class AemtController extends ChangeNotifier {
     );
   }
 
+  @visibleForTesting
+  ({
+    String filterChain,
+    List<String> metadataArgs,
+    List<String> logLines,
+    SourceColorClass sourceClass,
+    String? tonemapAlgorithm,
+  })
+  debugBuildToneMappingFilter(
+    VideoStreamInfo video,
+    ToneMappingConfig config, {
+    required bool hasZscale,
+  }) {
+    return _taskPlanner._buildToneMappingFilter(
+      video,
+      config,
+      hasZscale: hasZscale,
+    );
+  }
+
   void _markChanged() {
     notifyListeners();
   }

@@ -111,6 +111,13 @@ class _TaskPlanner {
     }
     final _EncoderSelection encoder = resolveEncoder(enabledVideo.first.codec);
     final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
+    final toneMapping = _buildToneMappingFilter(
+      enabledVideo.first.videoInfo ??
+          info.primaryVideo ??
+          const VideoStreamInfo(),
+      _controller.toneMappingConfig,
+      hasZscale: _controller.diagnostics.hasZscale,
+    );
     final List<String> args = <String>[
       '-y',
       '-hide_banner',
@@ -131,7 +138,10 @@ class _TaskPlanner {
     }
     args.addAll(<String>[
       '-vf',
-      _buildSubtitleFilter(binding.filePath!, fontFiles),
+      _joinVideoFilters(<String>[
+        toneMapping.filterChain,
+        _buildSubtitleFilter(binding.filePath!, fontFiles),
+      ]),
       '-r',
       _controller.outputFps.trim(),
       '-c:v',
@@ -142,6 +152,7 @@ class _TaskPlanner {
             VideoEncodingConfig.defaultsFor(encoder.encoder),
       ),
       ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
+      ...toneMapping.metadataArgs,
       '-movflags',
       '+faststart',
     ]);
@@ -221,6 +232,13 @@ class _TaskPlanner {
       preferredCodecFamily: 'hevc',
     );
     final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
+    final toneMapping = _buildToneMappingFilter(
+      enabledVideo.first.videoInfo ??
+          info.primaryVideo ??
+          const VideoStreamInfo(),
+      _controller.toneMappingConfig,
+      hasZscale: _controller.diagnostics.hasZscale,
+    );
     final List<String> args = <String>[
       '-y',
       '-hide_banner',
@@ -266,7 +284,10 @@ class _TaskPlanner {
       '-c:v',
       encoder.encoder,
       '-vf',
-      _buildVideoScaleFilter(),
+      _joinVideoFilters(<String>[
+        toneMapping.filterChain,
+        _buildVideoScaleFilter(),
+      ]),
       '-r',
       _controller.outputFps.trim(),
       ..._buildVideoRateControlArguments(
@@ -276,6 +297,7 @@ class _TaskPlanner {
       ),
       ..._buildPixelFormatArguments(encoder),
       ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
+      ...toneMapping.metadataArgs,
       '-c:s',
       'copy',
     ]);
@@ -571,6 +593,219 @@ class _TaskPlanner {
       return value.toInt().toString();
     }
     return value.toString();
+  }
+
+  ({
+    String filterChain,
+    List<String> metadataArgs,
+    List<String> logLines,
+    SourceColorClass sourceClass,
+    String? tonemapAlgorithm,
+  })
+  _buildToneMappingFilter(
+    VideoStreamInfo video,
+    ToneMappingConfig config, {
+    required bool hasZscale,
+  }) {
+    final SourceColorClass sourceClass = detectSourceColorClass(video);
+    if (!hasZscale) {
+      return (
+        filterChain: '',
+        metadataArgs: const <String>[],
+        logLines: const <String>['WARN: ffmpeg 未启用 libzimg，色调映射已跳过'],
+        sourceClass: sourceClass,
+        tonemapAlgorithm: null,
+      );
+    }
+    _validateToneMappingConfig(config);
+    switch (config.tonemapMode) {
+      case 'auto':
+        switch (sourceClass) {
+          case SourceColorClass.sdrBt709:
+            return (
+              filterChain: '',
+              metadataArgs: _bt709MetadataArgs(),
+              logLines: const <String>[],
+              sourceClass: sourceClass,
+              tonemapAlgorithm: null,
+            );
+          case SourceColorClass.sdrWideGamut:
+            return (
+              filterChain: 'zscale=p=bt709:t=bt709:m=bt709:r=tv,format=yuv420p',
+              metadataArgs: _bt709MetadataArgs(),
+              logLines: const <String>[],
+              sourceClass: sourceClass,
+              tonemapAlgorithm: null,
+            );
+          case SourceColorClass.hdrPq:
+          case SourceColorClass.hdrHlg:
+            return (
+              filterChain: _buildPqToneMapChain(config),
+              metadataArgs: _bt709MetadataArgs(),
+              logLines: const <String>[],
+              sourceClass: sourceClass,
+              tonemapAlgorithm: config.tonemapAlgo,
+            );
+          case SourceColorClass.dolbyVision:
+            return (
+              filterChain: _buildPqToneMapChain(config),
+              metadataArgs: _bt709MetadataArgs(),
+              logLines: const <String>[
+                'WARN: 检测到 Dolby Vision，AEMT 仅按 PQ 基础层处理',
+              ],
+              sourceClass: sourceClass,
+              tonemapAlgorithm: config.tonemapAlgo,
+            );
+          case SourceColorClass.unknown:
+            return (
+              filterChain: '',
+              metadataArgs: _bt709MetadataArgs(),
+              logLines: const <String>['WARN: 无法识别源色彩特性，已按 BT.709 直通输出'],
+              sourceClass: sourceClass,
+              tonemapAlgorithm: null,
+            );
+        }
+      case 'on':
+        return (
+          filterChain: _buildPqToneMapChain(config),
+          metadataArgs: _metadataArgsForOutputAxes(config),
+          logLines: const <String>[],
+          sourceClass: sourceClass,
+          tonemapAlgorithm: config.tonemapAlgo,
+        );
+      case 'off':
+        final List<String> metadataArgs = _metadataArgsForOutputAxes(config);
+        final String filter = _anyToneMappingAxisNotSource(config)
+            ? _buildManualZscaleFilter(config)
+            : '';
+        return (
+          filterChain: filter,
+          metadataArgs: metadataArgs,
+          logLines: const <String>[],
+          sourceClass: sourceClass,
+          tonemapAlgorithm: null,
+        );
+      default:
+        throw Exception('色调映射参数非法: tonemapMode');
+    }
+  }
+
+  void _validateToneMappingConfig(ToneMappingConfig config) {
+    if (config.desat < 0 || config.desat > 2) {
+      throw Exception('色调映射参数非法: desat');
+    }
+    if (config.peak != 'auto') {
+      final double? peak = double.tryParse(config.peak);
+      if (peak == null || peak <= 0) {
+        throw Exception('色调映射参数非法: peak');
+      }
+    }
+  }
+
+  String _buildPqToneMapChain(ToneMappingConfig config) {
+    final String peak = config.peak == 'auto' ? '' : ':peak=${config.peak}';
+    return 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,'
+        'tonemap=tonemap=${config.tonemapAlgo}:desat=${_fmt(config.desat)}$peak,'
+        'zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
+  }
+
+  List<String> _bt709MetadataArgs() {
+    return const <String>[
+      '-color_primaries',
+      'bt709',
+      '-color_trc',
+      'bt709',
+      '-colorspace',
+      'bt709',
+      '-color_range',
+      'tv',
+    ];
+  }
+
+  List<String> _metadataArgsForOutputAxes(ToneMappingConfig config) {
+    final List<String> args = <String>[];
+    final String primaries = _mapPrimaries(config.outputPrimaries);
+    if (primaries.isNotEmpty) {
+      args.addAll(<String>['-color_primaries', primaries]);
+      args.addAll(<String>['-colorspace', _mapMatrix(config.outputPrimaries)]);
+    }
+    final String transfer = _mapTransfer(config.outputTransfer);
+    if (transfer.isNotEmpty) {
+      args.addAll(<String>['-color_trc', transfer]);
+    }
+    final String range = _mapRange(config.outputRange);
+    if (range.isNotEmpty) {
+      args.addAll(<String>['-color_range', range]);
+    }
+    return args;
+  }
+
+  bool _anyToneMappingAxisNotSource(ToneMappingConfig config) {
+    return _mapPrimaries(config.outputPrimaries).isNotEmpty ||
+        _mapTransfer(config.outputTransfer).isNotEmpty ||
+        _mapRange(config.outputRange).isNotEmpty;
+  }
+
+  String _buildManualZscaleFilter(ToneMappingConfig config) {
+    final List<String> parts = <String>[];
+    final String primaries = _mapPrimaries(config.outputPrimaries);
+    if (primaries.isNotEmpty) {
+      parts.add('p=$primaries');
+      parts.add('m=${_mapMatrix(config.outputPrimaries)}');
+    }
+    final String transfer = _mapTransfer(config.outputTransfer);
+    if (transfer.isNotEmpty) {
+      parts.add('t=$transfer');
+    }
+    final String range = _mapRange(config.outputRange);
+    if (range.isNotEmpty) {
+      parts.add('r=$range');
+    }
+    return parts.isEmpty ? '' : 'zscale=${parts.join(':')}';
+  }
+
+  String _mapPrimaries(String value) {
+    return switch (value) {
+      'bt709' || 'BT.709' => 'bt709',
+      'bt2020' || 'BT.2020' => 'bt2020',
+      'p3d65' || 'P3-D65' => 'smpte432',
+      'source' || '保持源' => '',
+      _ => value,
+    };
+  }
+
+  String _mapTransfer(String value) {
+    return switch (value) {
+      'bt709' || 'BT.709' => 'bt709',
+      'smpte2084' || 'PQ' => 'smpte2084',
+      'arib-std-b67' || 'HLG' => 'arib-std-b67',
+      'source' || '保持源' => '',
+      _ => value,
+    };
+  }
+
+  String _mapMatrix(String value) {
+    return switch (value) {
+      'bt2020' || 'BT.2020' => 'bt2020nc',
+      'p3d65' || 'P3-D65' => 'bt709',
+      'source' || '保持源' => '',
+      _ => 'bt709',
+    };
+  }
+
+  String _mapRange(String value) {
+    return switch (value) {
+      'tv' || 'pc' => value,
+      'source' || '保持源' => '',
+      _ => value,
+    };
+  }
+
+  String _joinVideoFilters(Iterable<String> filters) {
+    return filters
+        .map((String filter) => filter.trim())
+        .where((String filter) => filter.isNotEmpty)
+        .join(',');
   }
 
   List<String> _buildVideoRateControlArguments(

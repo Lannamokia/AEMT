@@ -456,8 +456,8 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Property 7: Video rate-control command construction**
     - **Validates: Requirements 7.4, 7.5, 7.6, 7.7**
 
-- [ ] 14. _TaskPlanner：色调映射滤镜链
-  - [ ] 14.1 Implement `_buildToneMappingFilter(v, cfg, hasZscale)`
+- [x] 14. _TaskPlanner：色调映射滤镜链
+  - [x] 14.1 Implement `_buildToneMappingFilter(v, cfg, hasZscale)`
     - Returns `(filterChain, metadataArgs, logLines)`
     - `hasZscale=false` → empty filter, no axis-derived metadata,
       append `WARN: ffmpeg 未启用 libzimg，色调映射已跳过`
@@ -473,7 +473,7 @@ design 中编号独立成子任务，方便逐条追溯。
     - _Requirements: 22.2, 22.3, 22.4, 22.5, 22.6, 24.2, 24.3, 24.4,
       24.5, 26.4, 27.2_
 
-  - [ ] 14.2 Write property test for tonemap decision table
+  - [x] 14.2 Write property test for tonemap decision table
     - **Property 17: Tone mapping filter chain decision table**
     - **Validates: Requirements 22.2, 22.3, 22.4, 22.5, 22.6, 24.2,
       24.3, 24.4, 24.5, 26.4**
