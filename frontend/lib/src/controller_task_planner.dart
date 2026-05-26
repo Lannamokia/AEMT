@@ -1,5 +1,14 @@
 part of 'controller.dart';
 
+typedef _FontPipelineResult = ({
+  List<ResolvedFontFile> fonts,
+  Map<String, String> renameMap,
+  List<String> warnings,
+  List<String> assSubtitlePaths,
+  Map<String, String> rewrittenAssPaths,
+  List<CommandStep> subsetSteps,
+});
+
 class _TaskPlanner {
   _TaskPlanner(this._controller);
 
@@ -48,36 +57,202 @@ class _TaskPlanner {
       workDir.path,
       info.chapters,
     );
-    final List<ResolvedFontFile> fontFiles = await _controller._fontAssetService
-        .resolveFontFiles(_controller.importedFontSources, workDir.path);
     final String outputPath = task.outputPath;
     await Directory(_controller.outputDirectory).create(recursive: true);
     final List<SubtitleBinding> bindings = _controller._resolveBindings(
       task.bindingKeys,
     );
     _controller._validateTaskBindings(task.profile, bindings);
+    final DebugFontResolver? debugFontResolver = _controller.debugFontResolver;
+    final List<ResolvedFontFile> importedFonts = debugFontResolver == null
+        ? await _controller._fontAssetService.resolveFontFiles(
+            _controller.importedFontSources,
+            workDir.path,
+          )
+        : await debugFontResolver(
+            _controller.importedFontSources,
+            workDir.path,
+          );
+    final DebugAttachmentExtractor? debugAttachmentExtractor =
+        _controller.debugAttachmentExtractor;
+    final List<ResolvedFontFile> extractedAttachments =
+        debugAttachmentExtractor == null
+        ? await _controller._fontAssetService.extractEnabledInputAttachments(
+            info,
+            workDir.path,
+          )
+        : await debugAttachmentExtractor(info, workDir.path);
     if (task.profile == ExportProfile.muxMkv) {
-      final List<ResolvedFontFile> extractedAttachments = await _controller
-          ._fontAssetService
-          .extractEnabledInputAttachments(info, workDir.path);
+      final _FontPipelineResult fontPipeline = await _runFontPipeline(
+        bindings: bindings,
+        importedFonts: importedFonts,
+        extractedAttachments: extractedAttachments,
+        workDir: workDir.path,
+      );
       return _buildMuxPlan(
         info: info,
         bindings: bindings,
-        extractedAttachments: extractedAttachments,
+        fontPipeline: fontPipeline,
         outputPath: outputPath,
         workDir: workDir.path,
         chapterMetadataPath: chapterMetadataPath,
-        fontFiles: fontFiles,
       );
     }
+    final _FontPipelineResult fontPipeline = await _runFontPipeline(
+      bindings: bindings,
+      importedFonts: importedFonts,
+      extractedAttachments: extractedAttachments,
+      workDir: workDir.path,
+    );
     return _buildHardsubPlan(
       info: info,
       binding: bindings.first,
       outputPath: outputPath,
       workDir: workDir.path,
       chapterMetadataPath: chapterMetadataPath,
-      fontFiles: fontFiles,
+      fontPipeline: fontPipeline,
     );
+  }
+
+  Future<_FontPipelineResult> _runFontPipeline({
+    required List<SubtitleBinding> bindings,
+    required List<ResolvedFontFile> importedFonts,
+    required List<ResolvedFontFile> extractedAttachments,
+    required String workDir,
+  }) async {
+    final List<String> subtitlePaths = <String>[
+      for (final SubtitleBinding binding in bindings)
+        if (binding.filePath != null) binding.filePath!,
+    ];
+    final List<String> assSubtitlePaths = subtitlePaths
+        .where(_isAssSubtitlePath)
+        .toList();
+    if (subtitlePaths.isEmpty) {
+      return (
+        fonts: <ResolvedFontFile>[],
+        renameMap: <String, String>{},
+        warnings: <String>[],
+        assSubtitlePaths: assSubtitlePaths,
+        rewrittenAssPaths: <String, String>{},
+        subsetSteps: <CommandStep>[],
+      );
+    }
+    final SubtitleCharIndex charIndex = await _controller._fontAssetService
+        .indexSubtitleCharacters(subtitlePaths);
+    final Map<String, Set<int>> matchableCodepoints = <String, Set<int>>{
+      for (final MapEntry<String, Set<int>> entry
+          in charIndex.codepointsByFontname.entries)
+        if (entry.key != '__default__') entry.key: entry.value,
+    };
+    if (matchableCodepoints.isEmpty) {
+      return (
+        fonts: <ResolvedFontFile>[],
+        renameMap: <String, String>{},
+        warnings: <String>[],
+        assSubtitlePaths: assSubtitlePaths,
+        rewrittenAssPaths: <String, String>{},
+        subsetSteps: <CommandStep>[],
+      );
+    }
+    final SubtitleCharIndex matchableIndex = SubtitleCharIndex(
+      matchableCodepoints,
+    );
+    final List<ResolvedFontFile> candidates = <ResolvedFontFile>[
+      ...importedFonts,
+      ...extractedAttachments,
+    ];
+    final FontMatchResult matchResult = _controller._fontAssetService
+        .matchFonts(matchableIndex, candidates);
+    if (matchResult.missing.isNotEmpty && !_controller.continueOnMissingFont) {
+      throw Exception('未找到字体: ${matchResult.missing.first}');
+    }
+    final List<String> warnings = <String>[
+      for (final String fontName in matchResult.missing)
+        'WARN: 字体 $fontName 缺失',
+    ];
+    final RuntimeDiagnostics diagnostics = _controller.diagnostics;
+    final String? pyftsubsetPath = diagnostics.pyftsubset.path;
+    final String? ttxPath = diagnostics.ttx.path;
+    if (matchResult.matched.isEmpty ||
+        pyftsubsetPath == null ||
+        pyftsubsetPath.isEmpty ||
+        ttxPath == null ||
+        ttxPath.isEmpty) {
+      if (matchResult.matched.isNotEmpty) {
+        warnings.add('未找到 pyftsubset/ttx，已跳过字体子集化与 ASS 重写');
+      }
+      return (
+        fonts: matchResult.matched.values.toList(),
+        renameMap: <String, String>{},
+        warnings: warnings,
+        assSubtitlePaths: assSubtitlePaths,
+        rewrittenAssPaths: <String, String>{},
+        subsetSteps: <CommandStep>[],
+      );
+    }
+    final List<FontSubsetStepPlan> subsetPlans = _controller._fontAssetService
+        .planSubsetFontSteps(
+          matchableIndex,
+          matchResult.matched,
+          workDir,
+          pyftsubsetPath: pyftsubsetPath,
+          ttxPath: ttxPath,
+          aemtVersion: '1.0.0',
+          fontToolsVersion: diagnostics.fontToolsVersion?.toString(),
+          sourceHanEllipsisFix: _controller.sourceHanEllipsisFix,
+        );
+    final Map<String, String> renameMap = <String, String>{
+      for (final FontSubsetStepPlan plan in subsetPlans)
+        plan.normalizedKey: plan.randomName,
+    };
+    final Map<String, String> rewrittenAssPaths = renameMap.isEmpty
+        ? <String, String>{}
+        : await _rewriteAssSubtitles(
+            assSubtitlePaths: assSubtitlePaths,
+            renameMap: renameMap,
+            workDir: workDir,
+          );
+    return (
+      fonts: subsetPlans
+          .map((FontSubsetStepPlan plan) => plan.outputFont)
+          .toList(),
+      renameMap: renameMap,
+      warnings: warnings,
+      assSubtitlePaths: assSubtitlePaths,
+      rewrittenAssPaths: rewrittenAssPaths,
+      subsetSteps: <CommandStep>[
+        for (final FontSubsetStepPlan plan in subsetPlans)
+          CommandStep(
+            executable: plan.pyftsubsetPath,
+            arguments: plan.pyftsubsetArguments,
+            description: '子集化字幕字体',
+            fontSubsetStep: plan,
+          ),
+      ],
+    );
+  }
+
+  Future<Map<String, String>> _rewriteAssSubtitles({
+    required List<String> assSubtitlePaths,
+    required Map<String, String> renameMap,
+    required String workDir,
+  }) async {
+    final Map<String, String> rewritten = <String, String>{};
+    if (assSubtitlePaths.isEmpty || renameMap.isEmpty) {
+      return rewritten;
+    }
+    final String outputDir = p.join(workDir, 'subtitles');
+    await Directory(outputDir).create(recursive: true);
+    for (final String originalPath in assSubtitlePaths) {
+      final String outputPath = p.join(outputDir, p.basename(originalPath));
+      await rewriteAssWithRenameMap(
+        originalPath: originalPath,
+        outputPath: outputPath,
+        renameMap: renameMap,
+      );
+      rewritten[originalPath] = outputPath;
+    }
+    return rewritten;
   }
 
   TaskPlan _buildHardsubPlan({
@@ -86,7 +261,7 @@ class _TaskPlanner {
     required String outputPath,
     required String workDir,
     required String? chapterMetadataPath,
-    required List<ResolvedFontFile> fontFiles,
+    required _FontPipelineResult fontPipeline,
   }) {
     if (binding.filePath == null) {
       throw Exception('导出内嵌 MP4 前需要绑定对应字幕。');
@@ -140,7 +315,10 @@ class _TaskPlanner {
       '-vf',
       _joinVideoFilters(<String>[
         toneMapping.filterChain,
-        _buildSubtitleFilter(binding.filePath!, fontFiles),
+        _buildSubtitleFilter(
+          _subtitlePathForPlanner(binding.filePath!, fontPipeline),
+          fontPipeline.fonts,
+        ),
       ]),
       '-r',
       _controller.outputFps.trim(),
@@ -164,10 +342,21 @@ class _TaskPlanner {
       );
     }
     args.add(outputPath);
+    final List<String> diagnosticComments = _buildDiagnosticComments(
+      enabledAudio: enabledAudio,
+      encoder: encoder,
+      toneMapping: toneMapping,
+    );
+    final String commandPreview = _renderCommandPreview(
+      diagnosticComments,
+      renderCommand(_controller.diagnostics.ffmpeg.path!, args),
+      workDir,
+    );
     return TaskPlan(
       outputPath: outputPath,
-      commandPreview: renderCommand(_controller.diagnostics.ffmpeg.path!, args),
+      commandPreview: commandPreview,
       steps: <CommandStep>[
+        ...fontPipeline.subsetSteps,
         CommandStep(
           executable: _controller.diagnostics.ffmpeg.path!,
           arguments: args,
@@ -176,17 +365,17 @@ class _TaskPlanner {
       ],
       workingDirectory: workDir,
       expectedDuration: info.duration,
+      initialLogLines: fontPipeline.warnings,
     );
   }
 
   TaskPlan _buildMuxPlan({
     required MediaInfo info,
     required List<SubtitleBinding> bindings,
-    required List<ResolvedFontFile> extractedAttachments,
+    required _FontPipelineResult fontPipeline,
     required String outputPath,
     required String workDir,
     required String? chapterMetadataPath,
-    required List<ResolvedFontFile> fontFiles,
   }) {
     if (!_controller.diagnostics.mkvpropedit.available) {
       throw Exception('导出简繁内封 MKV 需要 mkvpropedit。');
@@ -257,7 +446,10 @@ class _TaskPlanner {
             )
             .toList();
     for (final MediaStreamEntry subtitle in selectedExternalSubtitle) {
-      args.addAll(<String>['-i', subtitle.externalPath!]);
+      args.addAll(<String>[
+        '-i',
+        _subtitlePathForPlanner(subtitle.externalPath!, fontPipeline),
+      ]);
     }
     if (chapterMetadataPath != null) {
       args.addAll(<String>['-i', chapterMetadataPath]);
@@ -325,10 +517,7 @@ class _TaskPlanner {
         stream: stream,
       );
     }
-    final List<ResolvedFontFile> attachmentFiles = <ResolvedFontFile>[
-      ...extractedAttachments,
-      ...fontFiles,
-    ];
+    final List<ResolvedFontFile> attachmentFiles = fontPipeline.fonts;
     for (var i = 0; i < attachmentFiles.length; i++) {
       final ResolvedFontFile attachment = attachmentFiles[i];
       final int attachmentIndex = i;
@@ -343,19 +532,33 @@ class _TaskPlanner {
       ]);
     }
     args.add(outputPath);
+    final List<String> diagnosticComments = _buildDiagnosticComments(
+      enabledAudio: enabledAudio,
+      encoder: encoder,
+      toneMapping: toneMapping,
+    );
+    final String ffmpegPreview = _renderCommandPreview(
+      diagnosticComments,
+      renderCommand(_controller.diagnostics.ffmpeg.path!, args),
+      workDir,
+    );
     return TaskPlan(
       outputPath: outputPath,
       commandPreview: <String>[
-        renderCommand(_controller.diagnostics.ffmpeg.path!, args),
-        renderCommand(
-          _controller.diagnostics.mkvpropedit.path!,
-          _buildMkvSubtitleMetadataArguments(outputPath, <MediaStreamEntry>[
-            ...enabledSubtitle,
-            ...selectedExternalSubtitle,
-          ]),
+        ffmpegPreview,
+        _maskWorkDir(
+          renderCommand(
+            _controller.diagnostics.mkvpropedit.path!,
+            _buildMkvSubtitleMetadataArguments(outputPath, <MediaStreamEntry>[
+              ...enabledSubtitle,
+              ...selectedExternalSubtitle,
+            ]),
+          ),
+          workDir,
         ),
       ].join('\n\n'),
       steps: <CommandStep>[
+        ...fontPipeline.subsetSteps,
         CommandStep(
           executable: _controller.diagnostics.ffmpeg.path!,
           arguments: args,
@@ -372,6 +575,7 @@ class _TaskPlanner {
       ],
       workingDirectory: workDir,
       expectedDuration: info.duration,
+      initialLogLines: fontPipeline.warnings,
     );
   }
 
@@ -1105,6 +1309,86 @@ class _TaskPlanner {
       buffer.write("'");
     }
     return buffer.toString();
+  }
+
+  String _subtitlePathForPlanner(
+    String originalPath,
+    _FontPipelineResult fontPipeline,
+  ) {
+    if (fontPipeline.renameMap.isEmpty) {
+      return originalPath;
+    }
+    return fontPipeline.rewrittenAssPaths[originalPath] ?? originalPath;
+  }
+
+  bool _isAssSubtitlePath(String path) {
+    final String extension = p.extension(path).toLowerCase();
+    return extension == '.ass' || extension == '.ssa';
+  }
+
+  List<String> _buildDiagnosticComments({
+    required List<MediaStreamEntry> enabledAudio,
+    required _EncoderSelection encoder,
+    required ({
+      String filterChain,
+      List<String> metadataArgs,
+      List<String> logLines,
+      SourceColorClass sourceClass,
+      String? tonemapAlgorithm,
+    })
+    toneMapping,
+  }) {
+    final List<String> comments = <String>[];
+    for (var i = 0; i < enabledAudio.length; i++) {
+      final MediaStreamEntry stream = enabledAudio[i];
+      final String key = _controller._audioStreamConfigKey(
+        _controller.mediaInfo?.inputPath ?? '',
+        stream.index,
+      );
+      final AudioStreamConfig config =
+          _controller.audioStreamConfigs[key] ??
+          (shouldUseLegacyAudioPath(enabledAudio)
+              ? const AudioStreamConfig.defaultAac()
+              : _controller.audioDefaultProfile);
+      comments.add('# audio:$i ${config.encoder.trim()}');
+    }
+    final VideoEncodingConfig videoConfig =
+        _controller.videoEncodingConfigs[encoder.encoder] ??
+        VideoEncodingConfig.defaultsFor(encoder.encoder);
+    if (videoConfig.userOverridden) {
+      comments.add('# video ${encoder.encoder} rc=${videoConfig.mode}');
+    }
+    if (toneMapping.filterChain.contains('zscale') ||
+        toneMapping.filterChain.contains('tonemap')) {
+      comments.add(
+        '# tonemap source=${toneMapping.sourceClass.name} -> bt709 '
+        'algo=${toneMapping.tonemapAlgorithm ?? 'none'}',
+      );
+    }
+    return comments;
+  }
+
+  String _renderCommandPreview(
+    List<String> diagnosticComments,
+    String command,
+    String workDir,
+  ) {
+    final String maskedCommand = _maskWorkDir(command, workDir);
+    if (diagnosticComments.isEmpty) {
+      return maskedCommand;
+    }
+    return <String>[...diagnosticComments, maskedCommand].join('\n');
+  }
+
+  String _maskWorkDir(String text, String workDir) {
+    final String normalized = workDir.replaceAll(r'\', '/');
+    final String escapedNormalized = normalized.replaceAll(':', r'\:');
+    return text
+        .replaceAll(workDir, '<workDir>')
+        .replaceAll(normalized, '<workDir>')
+        .replaceAll(escapedNormalized, '<workDir>')
+        .replaceAll(r'<workDir>\', '<workDir>/')
+        .replaceAll(r'\', '/');
   }
 
   String _buildVideoScaleFilter() {

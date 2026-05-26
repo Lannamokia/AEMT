@@ -1567,6 +1567,7 @@ class TaskPlan {
     required this.steps,
     required this.workingDirectory,
     required this.expectedDuration,
+    this.initialLogLines = const <String>[],
   });
 
   final String outputPath;
@@ -1574,4 +1575,5 @@ class TaskPlan {
   final List<CommandStep> steps;
   final String workingDirectory;
   final Duration expectedDuration;
+  final List<String> initialLogLines;
 }

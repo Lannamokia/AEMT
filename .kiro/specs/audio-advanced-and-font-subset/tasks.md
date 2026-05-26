@@ -478,8 +478,8 @@ design 中编号独立成子任务，方便逐条追溯。
     - **Validates: Requirements 22.2, 22.3, 22.4, 22.5, 22.6, 24.2,
       24.3, 24.4, 24.5, 26.4**
 
-- [ ] 15. _TaskPlanner：字体管线接入与 buildTaskPlan 主流程
-  - [ ] 15.1 Wire font index → match → subset before plan assembly
+- [x] 15. _TaskPlanner：字体管线接入与 buildTaskPlan 主流程
+  - [x] 15.1 Wire font index → match → subset before plan assembly
     - Build `charIndex` from enabled subtitle paths; collect candidate
       fonts as `importedFonts ∪ extractedAttachments` (Font_Source
       only, never MiSans)
@@ -501,7 +501,7 @@ design 中编号独立成子任务，方便逐条追溯。
     - _Requirements: 11.2, 11.5, 11.6, 12.3, 12.4, 13.5, 13.6, 13.7,
       14.10, 15.5, 20.6, 29.1, 29.6_
 
-  - [ ] 15.2 Inject subset fonts into hardsub plan
+  - [x] 15.2 Inject subset fonts into hardsub plan
     - `_buildHardsubPlan` references subset directory via
       `subtitles=...:fontsdir=<workDir>/subsetted`; mask the path as
       `<workDir>/fonts` in `commandPreview`; never injects MiSans
@@ -512,7 +512,7 @@ design 中编号独立成子任务，方便逐条追溯。
       verbatim (Req 29.6)
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.6, 29.4, 29.6_
 
-  - [ ] 15.3 Inject subset fonts into mux plan
+  - [x] 15.3 Inject subset fonts into mux plan
     - `_buildMuxPlan` emits `-attach <subset.path>` plus
       `-metadata:s:t:i mimetype=<orig.mimeType>` /
       `filename=<orig.fileName>` per font; empty list when
@@ -524,7 +524,7 @@ design 中编号独立成子任务，方便逐条追溯。
       original ASS path is used (Req 29.6)
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5, 16.6, 29.5, 29.6_
 
-  - [ ] 15.4 Add `commandPreview` diagnostic comment lines
+  - [x] 15.4 Add `commandPreview` diagnostic comment lines
     - `# audio:N <encoder>` per enabled audio stream (in order;
       copy → encoder = `copy`)
     - `# video <encoder> rc=<mode>` iff
@@ -533,7 +533,7 @@ design 中编号独立成子任务，方便逐条追溯。
       final filter chain contains `zscale` or `tonemap`
     - _Requirements: 19.4, 19.5, 27.1_
 
-  - [ ] 15.5 Wire planner → SubsetAssRewriter call
+  - [x] 15.5 Wire planner → SubsetAssRewriter call
     - After `subsetFonts` succeeds and BEFORE
       `_buildHardsubPlan` / `_buildMuxPlan`, when `renameMap` is
       non-empty: `Directory(<workDir>/subtitles).create(recursive:
@@ -547,31 +547,31 @@ design 中编号独立成子任务，方便逐条追溯。
       planners fall back to the original ASS paths (Req 29.6)
     - _Requirements: 29.1, 29.2, 29.4, 29.5, 29.7_
 
-  - [ ] 15.6 Write property test for missing-font failure policy
+  - [x] 15.6 Write property test for missing-font failure policy
     - **Property 11: Missing-font failure policy**
     - **Validates: Requirements 11.5, 11.6, 12.3, 12.4, 15.3, 15.4,
       16.5, 16.6, 20.6**
 
-  - [ ] 15.7 Write property test for subset-font pipeline injection
+  - [x] 15.7 Write property test for subset-font pipeline injection
     - **Property 15: Subset-font pipeline injection**
     - **Validates: Requirements 15.1, 15.2, 15.5, 15.6, 16.1, 16.2,
       16.3, 16.4**
 
-  - [ ] 15.8 Write property test for diagnostic comment lines
+  - [x] 15.8 Write property test for diagnostic comment lines
     - **Property 19: Diagnostic comment-line preview**
     - **Validates: Requirements 19.4, 19.5, 27.1**
 
-  - [ ] 15.9 Write property test for legacy command equivalence
+  - [x] 15.9 Write property test for legacy command equivalence
     - **Property 5: Legacy command equivalence**
     - **Validates: Requirements 6.4, 7.9, 22.2**
     - Compare against golden snapshots in
       `frontend/test/golden/legacy_commands/`
 
-  - [ ] 15.10 Write property test for validation rejecting malformed input
+  - [x] 15.10 Write property test for validation rejecting malformed input
     - **Property 20: Validation rejects malformed input**
     - **Validates: Requirements 3.6, 7.8, 20.1, 20.2, 27.2**
 
-- [ ] 16. Checkpoint - planner end-to-end on golden snapshots
+- [x] 16. Checkpoint - planner end-to-end on golden snapshots
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 17. _QueueRunner：子集化步骤、取消与错误捕获

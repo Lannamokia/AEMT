@@ -110,6 +110,9 @@ class _QueueRunner {
       _controller._markChanged();
       final TaskPlan resolvedPlan = plan;
       final StringBuffer buffer = StringBuffer();
+      for (final String line in resolvedPlan.initialLogLines) {
+        buffer.writeln(line);
+      }
       var exitCode = 0;
       try {
         for (

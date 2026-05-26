@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 
 import 'models.dart';
 import 'services/font_asset_service.dart';
+import 'services/font_asset_service_internal/subset_ass_rewriter.dart';
 import 'services/media_parser.dart';
 import 'services/runtime_service.dart';
 import 'utils/export_utils.dart';
@@ -25,6 +26,13 @@ typedef DebugSubsetStepExecutor =
       FontSubsetStepPlan plan,
       Stream<void> cancelSignal,
     );
+typedef DebugFontResolver =
+    Future<List<ResolvedFontFile>> Function(
+      List<String> importedFontSources,
+      String workDir,
+    );
+typedef DebugAttachmentExtractor =
+    Future<List<ResolvedFontFile>> Function(MediaInfo info, String workDir);
 
 class AemtController extends ChangeNotifier {
   AemtController({@visibleForTesting bool initializePlayer = true})
@@ -143,6 +151,10 @@ class AemtController extends ChangeNotifier {
   DebugTaskPlanBuilder? debugTaskPlanBuilder;
   @visibleForTesting
   DebugSubsetStepExecutor? debugSubsetStepExecutor;
+  @visibleForTesting
+  DebugFontResolver? debugFontResolver;
+  @visibleForTesting
+  DebugAttachmentExtractor? debugAttachmentExtractor;
   final Map<String, EncoderTuning> encoderTunings = <String, EncoderTuning>{
     'libx264': const EncoderTuning(
       key: 'libx264',
@@ -759,6 +771,36 @@ class AemtController extends ChangeNotifier {
       video,
       config,
       hasZscale: hasZscale,
+    );
+  }
+
+  @visibleForTesting
+  Future<TaskPlan> debugBuildTaskPlan(ExportTask task) {
+    return _taskPlanner.buildTaskPlan(task);
+  }
+
+  @visibleForTesting
+  Future<
+    ({
+      List<ResolvedFontFile> fonts,
+      Map<String, String> renameMap,
+      List<String> warnings,
+      List<String> assSubtitlePaths,
+      Map<String, String> rewrittenAssPaths,
+      List<CommandStep> subsetSteps,
+    })
+  >
+  debugRunFontPipeline({
+    required List<SubtitleBinding> bindings,
+    required List<ResolvedFontFile> importedFonts,
+    required List<ResolvedFontFile> extractedAttachments,
+    required String workDir,
+  }) {
+    return _taskPlanner._runFontPipeline(
+      bindings: bindings,
+      importedFonts: importedFonts,
+      extractedAttachments: extractedAttachments,
+      workDir: workDir,
     );
   }
 
