@@ -49,6 +49,15 @@ AEMT 会按以下顺序查找 `7z.exe`：
 
 未安装或未配置 `7z` 时，程序仍可启动，但自定义字体压缩包只能处理 ZIP，无法提取 7z / RAR。
 
+AEMT 会按以下顺序查找字体子集化工具：
+
+1. 自定义配置路径
+2. 运行目录下的 `bin/`
+3. `FONTTOOLS_BIN_DIR`
+4. 系统 `PATH` 中的 `pyftsubset` / `ttx`
+
+字体子集化依赖 Python 版 FontTools 的 `pyftsubset` 与 `ttx`。未找到时程序仍可导出，但会跳过字体子集化与 ASS 字体名改写。
+
 ## 开发模式启动
 
 ```powershell
@@ -75,6 +84,7 @@ AEMT 会按以下顺序查找 `7z.exe`：
 打包脚本会执行 Windows release 构建，并把运行时依赖复制到：
 
 - `bin/`: 便携版优先搜索的运行时目录；会先复制项目根目录 `bin/`
+- `python/`: 官方 Windows embeddable Python 运行时；脚本会安装 `fonttools[woff]`，并在 `bin/` 生成 `pyftsubset.exe` / `ttx.exe`，避免依赖用户系统 Python 或全局 pip 包
 - `ffmpeg/`: 会优先使用项目根目录 `ffmpeg/` 下的 `ffmpeg.exe` / `ffprobe.exe` 覆盖便携版 `bin/` 中的同名文件
 - `mkvtoolnix`: 打包时会优先从 `MKVTOOLNIX_BIN_DIR`、系统安装目录或 `PATH` 中找到 `mkvpropedit.exe` 并复制其所在目录内容到便携版 `bin/`
 - `7z`: 打包时会优先从系统安装目录或 `PATH` 中找到 `7z.exe` / `7za.exe` / `7zz.exe` 并复制其所在目录内容到便携版 `bin/`
