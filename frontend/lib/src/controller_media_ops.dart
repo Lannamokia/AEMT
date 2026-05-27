@@ -62,6 +62,7 @@ class _MediaOps {
         path,
         jsonDecode(result.stdout.toString()) as Map<String, dynamic>,
       );
+      _controller._resetSubtitleBindingsForNewMedia();
       _controller._syncAudioStreamConfigsWithMedia(resetExisting: true);
       _controller.titleOverride = p.basenameWithoutExtension(path);
       _controller.outputFileNameOverride = p.basenameWithoutExtension(path);
@@ -82,7 +83,6 @@ class _MediaOps {
       _controller._appendHdrToneMappingNoticeIfNeeded();
       await _controller.player.open(Media(path), play: false);
       await _controller.player.setSubtitleTrack(SubtitleTrack.no());
-      _controller.previewSubtitleKey = 'off';
       _controller._syncExternalSubtitleStreams();
     } catch (error) {
       _controller.statusMessage = '解析失败: $error';

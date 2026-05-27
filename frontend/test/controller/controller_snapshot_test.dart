@@ -146,11 +146,74 @@ void main() {
 
     controller.dispose();
   });
+
+  test('new media reset clears source-specific external subtitles', () {
+    final AemtController controller = AemtController(initializePlayer: false);
+    final MediaInfo oldMediaInfo = _mediaInfo(inputPath: 'C:/old.mkv');
+    controller.debugSetMediaInfo(
+      oldMediaInfo.copyWith(
+        streams: <MediaStreamEntry>[
+          ...oldMediaInfo.streams,
+          const MediaStreamEntry(
+            index: 2,
+            kind: StreamKind.subtitle,
+            codec: 'ass',
+            title: 'Old external subtitle',
+            language: 'zh',
+            regionCode: 'CN',
+            enabled: true,
+            isDefault: true,
+            isForced: false,
+            origin: StreamOrigin.externalSubtitle,
+            sourceLabel: 'CHS 外挂字幕',
+            externalPath: 'C:/subs/old.chs.ass',
+          ),
+        ],
+      ),
+    );
+    controller.simplifiedBinding = controller.simplifiedBinding.copyWith(
+      filePath: 'C:/subs/old.chs.ass',
+    );
+    controller.traditionalBinding = controller.traditionalBinding.copyWith(
+      filePath: 'C:/subs/old.cht.ass',
+    );
+    controller.customBindings.add(
+      const SubtitleBinding(
+        key: 'custom_1',
+        label: '自定义字幕 1',
+        languageCode: 'zh',
+        regionCode: 'HK',
+        trackName: 'Custom',
+        filePath: 'C:/subs/old.custom.ass',
+      ),
+    );
+    controller.selectedHardsubBindingKeys.add('custom_1');
+    controller.selectedMuxBindingKeys.add('custom_1');
+    controller.previewSubtitleKey = 'external:custom_1';
+
+    controller.debugResetSubtitleBindingsForNewMedia();
+
+    expect(controller.simplifiedBinding.filePath, isNull);
+    expect(controller.traditionalBinding.filePath, isNull);
+    expect(controller.customBindings, isEmpty);
+    expect(controller.selectedHardsubBindingKeys, <String>{'chs', 'cht'});
+    expect(controller.selectedMuxBindingKeys, <String>{'chs', 'cht'});
+    expect(controller.previewSubtitleKey, 'off');
+    expect(
+      controller.mediaInfo!.streams.where(
+        (MediaStreamEntry stream) =>
+            stream.origin == StreamOrigin.externalSubtitle,
+      ),
+      isEmpty,
+    );
+
+    controller.dispose();
+  });
 }
 
 MediaInfo _mediaInfo({
   required String inputPath,
-  required VideoStreamInfo primaryVideo,
+  VideoStreamInfo primaryVideo = const VideoStreamInfo(),
 }) {
   return MediaInfo(
     inputPath: inputPath,

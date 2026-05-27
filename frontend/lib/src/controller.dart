@@ -734,6 +734,13 @@ class AemtController extends ChangeNotifier {
   }
 
   @visibleForTesting
+  void debugResetSubtitleBindingsForNewMedia() {
+    _resetSubtitleBindingsForNewMedia();
+    _syncExternalSubtitleStreams();
+    notifyListeners();
+  }
+
+  @visibleForTesting
   List<String> debugBuildAudioStreamArguments(
     int outIdx,
     AudioStreamConfig config, {
@@ -969,6 +976,19 @@ class AemtController extends ChangeNotifier {
       selectedHardsubBindingKeys.remove(key);
       selectedMuxBindingKeys.remove(key);
     }
+  }
+
+  void _resetSubtitleBindingsForNewMedia() {
+    simplifiedBinding = simplifiedBinding.copyWith(clearFile: true);
+    traditionalBinding = traditionalBinding.copyWith(clearFile: true);
+    customBindings.clear();
+    selectedHardsubBindingKeys
+      ..clear()
+      ..addAll(<String>{'chs', 'cht'});
+    selectedMuxBindingKeys
+      ..clear()
+      ..addAll(<String>{'chs', 'cht'});
+    previewSubtitleKey = 'off';
   }
 
   void _validateTaskBindings(
