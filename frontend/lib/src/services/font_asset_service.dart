@@ -419,6 +419,7 @@ class FontAssetService {
   }) {
     final Set<String> usedNames = <String>{};
     final String subsetDir = p.join(workDir, 'subsetted');
+    final String subsetWorkDir = p.join(workDir, 'subset_work');
     return <FontSubsetStepPlan>[
       for (final MapEntry<String, ResolvedFontFile> entry
           in matchedFontsByNormalizedFontname.entries)
@@ -427,6 +428,7 @@ class FontAssetService {
           originalFont: entry.value,
           codepoints: index.codepointsByFontname[entry.key] ?? <int>{},
           subsetDir: subsetDir,
+          subsetWorkDir: subsetWorkDir,
           pyftsubsetPath: pyftsubsetPath,
           ttxPath: ttxPath,
           aemtVersion: aemtVersion,
@@ -476,6 +478,7 @@ class FontAssetService {
     required Stream<void> cancelSignal,
   }) async {
     await Directory(plan.subsetDir).create(recursive: true);
+    await Directory(p.dirname(plan.codepointsFilePath)).create(recursive: true);
     await _appendLicenseSidecar(plan);
     await File(
       plan.codepointsFilePath,
@@ -560,7 +563,9 @@ class FontAssetService {
     final String text = plan.originalFont.licenseDescription.trim().isEmpty
         ? '原字体未提供许可信息，仅做字符子集化处理。'
         : plan.originalFont.licenseDescription.trim();
-    final File file = File(p.join(plan.subsetDir, 'LICENSE.txt'));
+    final File file = File(
+      p.join(p.dirname(plan.codepointsFilePath), 'LICENSE.txt'),
+    );
     final String entry = [
       'Font: ${plan.originalFont.fileName}',
       text,
@@ -574,6 +579,7 @@ class FontAssetService {
     required ResolvedFontFile originalFont,
     required Set<int> codepoints,
     required String subsetDir,
+    required String subsetWorkDir,
     required String pyftsubsetPath,
     required String ttxPath,
     required String aemtVersion,
@@ -585,11 +591,12 @@ class FontAssetService {
     final String randomName = generateRandomName(usedNames);
     final String baseName = p.basenameWithoutExtension(originalFont.fileName);
     final String extension = p.extension(originalFont.fileName);
+    final String intermediateDir = p.join(subsetWorkDir, randomName);
     final String subsetTempPath = p.join(
-      subsetDir,
+      intermediateDir,
       '$baseName.subset_tmp_$extension',
     );
-    final String ttxXmlPath = p.join(subsetDir, '$baseName.ttx');
+    final String ttxXmlPath = p.join(intermediateDir, '$baseName.ttx');
     final String outputPath = p.join(subsetDir, '$baseName.subset$extension');
     return FontSubsetStepPlan(
       originalFont: originalFont,
@@ -608,7 +615,7 @@ class FontAssetService {
       verifyAfterSubset: verifyAfterSubset,
       fsTypeRestricted: (originalFont.fsType & 0x0002) != 0,
       subsetDir: subsetDir,
-      codepointsFilePath: p.join(subsetDir, '$baseName.unicodes.txt'),
+      codepointsFilePath: p.join(intermediateDir, '$baseName.unicodes.txt'),
       subsetTempPath: subsetTempPath,
       ttxXmlPath: ttxXmlPath,
     );
