@@ -1568,6 +1568,7 @@ class TaskPlan {
     required this.workingDirectory,
     required this.expectedDuration,
     this.initialLogLines = const <String>[],
+    this.sharedFontPipelineKey,
   });
 
   final String outputPath;
@@ -1576,4 +1577,5 @@ class TaskPlan {
   final String workingDirectory;
   final Duration expectedDuration;
   final List<String> initialLogLines;
+  final String? sharedFontPipelineKey;
 }

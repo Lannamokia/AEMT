@@ -86,6 +86,34 @@ Future<void> main(List<String> args) async {
   );
 }
 
+CommandStep _cmdStep({required String description, required int exitCode}) {
+  return CommandStep(
+    executable: 'cmd.exe',
+    arguments: <String>[
+      '/c',
+      exitCode == 0
+          ? 'exit /b 0'
+          : 'echo planned failure 1>&2 & exit /b $exitCode',
+    ],
+    description: description,
+  );
+}
+
+ExportTask _queuedTask(String id) {
+  return ExportTask(
+    id: id,
+    profile: ExportProfile.hardsubMp4,
+    bindingKeys: const <String>['chs'],
+    label: 'task',
+    outputPath: 'out.mp4',
+    status: TaskStatus.queued,
+    progress: 0,
+    currentStep: '',
+    commandPreview: '',
+    log: '',
+  );
+}
+
 CommandStep _toneMappingFailureStep() {
   return CommandStep(
     executable: 'cmd.exe',
@@ -129,20 +157,7 @@ void main() {
           );
         };
 
-    controller.tasks.add(
-      const ExportTask(
-        id: 't1',
-        profile: ExportProfile.hardsubMp4,
-        bindingKeys: <String>['chs'],
-        label: 'task',
-        outputPath: 'out.mp4',
-        status: TaskStatus.queued,
-        progress: 0,
-        currentStep: '',
-        commandPreview: '',
-        log: '',
-      ),
-    );
+    controller.tasks.add(_queuedTask('t1'));
 
     await controller.runQueue();
 
@@ -171,20 +186,7 @@ void main() {
       );
     };
 
-    controller.tasks.add(
-      const ExportTask(
-        id: 't2',
-        profile: ExportProfile.hardsubMp4,
-        bindingKeys: <String>['chs'],
-        label: 'task',
-        outputPath: 'out.mp4',
-        status: TaskStatus.queued,
-        progress: 0,
-        currentStep: '',
-        commandPreview: '',
-        log: '',
-      ),
-    );
+    controller.tasks.add(_queuedTask('t2'));
 
     final Future<void> queueFuture = controller.runQueue();
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -214,20 +216,7 @@ void main() {
         );
       };
 
-      controller.tasks.add(
-        const ExportTask(
-          id: 't3',
-          profile: ExportProfile.hardsubMp4,
-          bindingKeys: <String>['chs'],
-          label: 'task',
-          outputPath: 'out.mp4',
-          status: TaskStatus.queued,
-          progress: 0,
-          currentStep: '',
-          commandPreview: '',
-          log: '',
-        ),
-      );
+      controller.tasks.add(_queuedTask('t3'));
 
       await controller.runQueue();
 
@@ -239,4 +228,110 @@ void main() {
       );
     },
   );
+
+  test(
+    'task-owned temp directory is deleted after successful completion',
+    () async {
+      final AemtController controller = AemtController(initializePlayer: false);
+      final Directory workDir = await Directory.systemTemp.createTemp(
+        'aemt_success_cleanup_',
+      );
+      final CommandStep step = _cmdStep(description: '成功命令', exitCode: 0);
+      controller.debugTaskPlanBuilder = (ExportTask task) async {
+        return TaskPlan(
+          outputPath: task.outputPath,
+          commandPreview: 'preview',
+          steps: <CommandStep>[step],
+          workingDirectory: workDir.path,
+          expectedDuration: const Duration(seconds: 1),
+        );
+      };
+      controller.tasks.add(_queuedTask('t4'));
+
+      await controller.runQueue();
+
+      expect(controller.tasks.first.status, TaskStatus.success);
+      expect(await workDir.exists(), isFalse);
+    },
+  );
+
+  test(
+    'task-owned temp directory is deleted after failed completion',
+    () async {
+      final AemtController controller = AemtController(initializePlayer: false);
+      final Directory workDir = await Directory.systemTemp.createTemp(
+        'aemt_failure_cleanup_',
+      );
+      final CommandStep step = _cmdStep(description: '失败命令', exitCode: 7);
+      controller.debugTaskPlanBuilder = (ExportTask task) async {
+        return TaskPlan(
+          outputPath: task.outputPath,
+          commandPreview: 'preview',
+          steps: <CommandStep>[step],
+          workingDirectory: workDir.path,
+          expectedDuration: const Duration(seconds: 1),
+        );
+      };
+      controller.tasks.add(_queuedTask('t5'));
+
+      await controller.runQueue();
+
+      expect(controller.tasks.first.status, TaskStatus.failed);
+      expect(controller.tasks.first.error, '退出码 7');
+      expect(await workDir.exists(), isFalse);
+    },
+  );
+
+  test(
+    'task-owned temp directory is deleted after process start error',
+    () async {
+      final AemtController controller = AemtController(initializePlayer: false);
+      final Directory workDir = await Directory.systemTemp.createTemp(
+        'aemt_start_error_cleanup_',
+      );
+      controller.debugTaskPlanBuilder = (ExportTask task) async {
+        return TaskPlan(
+          outputPath: task.outputPath,
+          commandPreview: 'preview',
+          steps: const <CommandStep>[
+            CommandStep(
+              executable: 'C:/definitely/not/a/real/executable.exe',
+              arguments: <String>[],
+              description: '启动失败',
+            ),
+          ],
+          workingDirectory: workDir.path,
+          expectedDuration: const Duration(seconds: 1),
+        );
+      };
+      controller.tasks.add(_queuedTask('t6'));
+
+      await controller.runQueue();
+
+      expect(controller.tasks.first.status, TaskStatus.failed);
+      expect(controller.tasks.first.error, contains('executable'));
+      expect(await workDir.exists(), isFalse);
+    },
+  );
+
+  test('temp cleanup guard only accepts aemt-owned temp subdirectories', () {
+    final AemtController controller = AemtController(initializePlayer: false);
+    final String tempRoot = Directory.systemTemp.path;
+
+    expect(
+      controller.debugIsOwnedTempDirectory(
+        p.join(tempRoot, 'aemt_guard_example'),
+      ),
+      isTrue,
+    );
+    expect(controller.debugIsOwnedTempDirectory(tempRoot), isFalse);
+    expect(
+      controller.debugIsOwnedTempDirectory(p.join(tempRoot, 'not_aemt')),
+      isFalse,
+    );
+    expect(
+      controller.debugIsOwnedTempDirectory('C:/not-temp/aemt_guard_example'),
+      isFalse,
+    );
+  });
 }

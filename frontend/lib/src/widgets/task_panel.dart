@@ -71,8 +71,8 @@ class TaskPanel extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: controller.clearQueue,
-                    child: const Text('清空排队'),
+                    onPressed: controller.clearAllTasks,
+                    child: const Text('清空全部'),
                   ),
                 ),
               ],

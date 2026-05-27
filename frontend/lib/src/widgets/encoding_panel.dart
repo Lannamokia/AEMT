@@ -871,7 +871,7 @@ class _AudioConfigEditor extends StatelessWidget {
             _AudioBitrateField(
               enabled: enabled,
               value: config.bitrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   onChanged(config.copyWith(bitrate: value)),
             )
           else if (config.encoder == 'libopus')
@@ -1147,30 +1147,91 @@ class _AudioConfigEditor extends StatelessWidget {
   }
 }
 
-class _AudioBitrateField extends StatelessWidget {
+class _AudioBitrateField extends StatefulWidget {
   const _AudioBitrateField({
     required this.enabled,
     required this.value,
-    required this.onChanged,
+    required this.onSubmitted,
   });
 
   final bool enabled;
   final String value;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_AudioBitrateField> createState() => _AudioBitrateFieldState();
+}
+
+class _AudioBitrateFieldState extends State<_AudioBitrateField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  var _touched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(_AudioBitrateField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+      _touched = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _submit();
+    }
+  }
+
+  void _submit() {
+    final String value = _controller.text;
+    _touched = true;
+    setState(() {});
+    if (_isValid(value) && value != widget.value) {
+      widget.onSubmitted(value);
+    }
+  }
+
+  bool _isValid(String value) {
+    final String trimmed = value.trim();
+    return trimmed.isEmpty || RegExp(r'^\d+[kK]$').hasMatch(trimmed);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool invalid =
-        value.trim().isNotEmpty && !RegExp(r'^\d+[kK]$').hasMatch(value.trim());
+    final bool invalid = _touched && !_isValid(_controller.text);
     return TextFormField(
-      key: ValueKey<String>('audio-bitrate-$value'),
-      initialValue: value,
-      enabled: enabled,
+      key: const ValueKey<String>('audio-bitrate-field'),
+      controller: _controller,
+      focusNode: _focusNode,
+      enabled: widget.enabled,
       decoration: InputDecoration(
         labelText: '码率',
         errorText: invalid ? '码率格式应为如 192k' : null,
       ),
-      onChanged: onChanged,
+      onChanged: (_) {
+        if (_touched) {
+          setState(() {
+            _touched = false;
+          });
+        }
+      },
+      onFieldSubmitted: (_) => _submit(),
     );
   }
 }

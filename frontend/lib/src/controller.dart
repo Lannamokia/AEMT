@@ -811,6 +811,30 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _deleteOwnedTempDirectory(String path) async {
+    if (!_isOwnedTempDirectory(path)) {
+      return;
+    }
+    final Directory directory = Directory(path);
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+  }
+
+  bool _isOwnedTempDirectory(String path) {
+    final String normalizedPath = p.normalize(p.absolute(path)).toLowerCase();
+    final String tempRoot = p
+        .normalize(p.absolute(Directory.systemTemp.path))
+        .toLowerCase();
+    final String basename = p.basename(normalizedPath);
+    return basename.startsWith('aemt_') && p.isWithin(tempRoot, normalizedPath);
+  }
+
+  @visibleForTesting
+  bool debugIsOwnedTempDirectory(String path) {
+    return _isOwnedTempDirectory(path);
+  }
+
   Future<void> exportNow(
     ExportProfile profile,
     List<String> bindingKeys,
@@ -851,6 +875,10 @@ class AemtController extends ChangeNotifier {
 
   void clearQueue() {
     _queueRunner.clearQueue();
+  }
+
+  void clearAllTasks() {
+    _queueRunner.clearAllTasks();
   }
 
   Future<void> retryAll() async {

@@ -9,12 +9,44 @@ typedef _FontPipelineResult = ({
   List<CommandStep> subsetSteps,
 });
 
+class _SharedFontPipelineUse {
+  const _SharedFontPipelineUse({
+    required this.key,
+    required this.result,
+    required this.includeSubsetSteps,
+  });
+
+  final String key;
+  final _FontPipelineResult result;
+  final bool includeSubsetSteps;
+}
+
+class _SharedFontPipelineContext {
+  _SharedFontPipelineContext({
+    required this.key,
+    required this.workDir,
+    required this.result,
+    required this.pendingTaskIds,
+  });
+
+  final String key;
+  final String workDir;
+  final _FontPipelineResult result;
+  final Set<String> pendingTaskIds;
+  bool executorAssigned = false;
+  bool subsetReady = false;
+  bool failed = false;
+}
+
 class _TaskPlanner {
   _TaskPlanner(this._controller);
 
   final AemtController _controller;
 
-  Future<TaskPlan> buildTaskPlan(ExportTask task) async {
+  Future<TaskPlan> buildTaskPlan(
+    ExportTask task, {
+    _SharedFontPipelineUse? sharedFontPipeline,
+  }) async {
     final MediaInfo? info = _controller.mediaInfo;
     if (info == null) {
       throw Exception('请先导入视频。');
@@ -53,64 +85,98 @@ class _TaskPlanner {
       throw Exception('输出帧率必须大于 0。');
     }
     final Directory workDir = await Directory.systemTemp.createTemp('aemt_');
-    final String? chapterMetadataPath = await _writeChapterMetadata(
-      workDir.path,
-      info.chapters,
-    );
-    final String outputPath = task.outputPath;
-    await Directory(_controller.outputDirectory).create(recursive: true);
-    final List<SubtitleBinding> bindings = _controller._resolveBindings(
-      task.bindingKeys,
-    );
-    _controller._validateTaskBindings(task.profile, bindings);
+    try {
+      final String? chapterMetadataPath = await _writeChapterMetadata(
+        workDir.path,
+        info.chapters,
+      );
+      final String outputPath = task.outputPath;
+      await Directory(_controller.outputDirectory).create(recursive: true);
+      final List<SubtitleBinding> bindings = _controller._resolveBindings(
+        task.bindingKeys,
+      );
+      _controller._validateTaskBindings(task.profile, bindings);
+      final _FontPipelineResult? sharedResult = sharedFontPipeline == null
+          ? null
+          : _fontPipelineWithSubsetSteps(
+              sharedFontPipeline.result,
+              includeSubsetSteps: sharedFontPipeline.includeSubsetSteps,
+            );
+      if (task.profile == ExportProfile.muxMkv) {
+        final _FontPipelineResult fontPipeline =
+            sharedResult ??
+            await _runFontPipelineForBindings(bindings, workDir.path);
+        return _buildMuxPlan(
+          info: info,
+          bindings: bindings,
+          fontPipeline: fontPipeline,
+          outputPath: outputPath,
+          workDir: workDir.path,
+          chapterMetadataPath: chapterMetadataPath,
+          sharedFontPipelineKey: sharedFontPipeline?.key,
+        );
+      }
+      final _FontPipelineResult fontPipeline =
+          sharedResult ??
+          await _runFontPipelineForBindings(bindings, workDir.path);
+      return _buildHardsubPlan(
+        info: info,
+        binding: bindings.first,
+        outputPath: outputPath,
+        workDir: workDir.path,
+        chapterMetadataPath: chapterMetadataPath,
+        fontPipeline: fontPipeline,
+        sharedFontPipelineKey: sharedFontPipeline?.key,
+      );
+    } catch (_) {
+      await _controller._deleteOwnedTempDirectory(workDir.path);
+      rethrow;
+    }
+  }
+
+  Future<_FontPipelineResult> _runFontPipelineForBindings(
+    List<SubtitleBinding> bindings,
+    String workDir,
+  ) async {
     final DebugFontResolver? debugFontResolver = _controller.debugFontResolver;
     final List<ResolvedFontFile> importedFonts = debugFontResolver == null
         ? await _controller._fontAssetService.resolveFontFiles(
             _controller.importedFontSources,
-            workDir.path,
+            workDir,
           )
-        : await debugFontResolver(
-            _controller.importedFontSources,
-            workDir.path,
-          );
+        : await debugFontResolver(_controller.importedFontSources, workDir);
     final DebugAttachmentExtractor? debugAttachmentExtractor =
         _controller.debugAttachmentExtractor;
+    final MediaInfo info = _controller.mediaInfo!;
     final List<ResolvedFontFile> extractedAttachments =
         debugAttachmentExtractor == null
         ? await _controller._fontAssetService.extractEnabledInputAttachments(
             info,
-            workDir.path,
+            workDir,
           )
-        : await debugAttachmentExtractor(info, workDir.path);
-    if (task.profile == ExportProfile.muxMkv) {
-      final _FontPipelineResult fontPipeline = await _runFontPipeline(
-        bindings: bindings,
-        importedFonts: importedFonts,
-        extractedAttachments: extractedAttachments,
-        workDir: workDir.path,
-      );
-      return _buildMuxPlan(
-        info: info,
-        bindings: bindings,
-        fontPipeline: fontPipeline,
-        outputPath: outputPath,
-        workDir: workDir.path,
-        chapterMetadataPath: chapterMetadataPath,
-      );
-    }
-    final _FontPipelineResult fontPipeline = await _runFontPipeline(
+        : await debugAttachmentExtractor(info, workDir);
+    return _runFontPipeline(
       bindings: bindings,
       importedFonts: importedFonts,
       extractedAttachments: extractedAttachments,
-      workDir: workDir.path,
+      workDir: workDir,
     );
-    return _buildHardsubPlan(
-      info: info,
-      binding: bindings.first,
-      outputPath: outputPath,
-      workDir: workDir.path,
-      chapterMetadataPath: chapterMetadataPath,
-      fontPipeline: fontPipeline,
+  }
+
+  _FontPipelineResult _fontPipelineWithSubsetSteps(
+    _FontPipelineResult result, {
+    required bool includeSubsetSteps,
+  }) {
+    if (includeSubsetSteps) {
+      return result;
+    }
+    return (
+      fonts: result.fonts,
+      renameMap: result.renameMap,
+      warnings: result.warnings,
+      assSubtitlePaths: result.assSubtitlePaths,
+      rewrittenAssPaths: result.rewrittenAssPaths,
+      subsetSteps: <CommandStep>[],
     );
   }
 
@@ -262,6 +328,7 @@ class _TaskPlanner {
     required String workDir,
     required String? chapterMetadataPath,
     required _FontPipelineResult fontPipeline,
+    required String? sharedFontPipelineKey,
   }) {
     if (binding.filePath == null) {
       throw Exception('导出内嵌 MP4 前需要绑定对应字幕。');
@@ -370,6 +437,7 @@ class _TaskPlanner {
         ..._hdrToneMappingUserChoiceLogLines(toneMapping.sourceClass),
         ...fontPipeline.warnings,
       ],
+      sharedFontPipelineKey: sharedFontPipelineKey,
     );
   }
 
@@ -380,6 +448,7 @@ class _TaskPlanner {
     required String outputPath,
     required String workDir,
     required String? chapterMetadataPath,
+    required String? sharedFontPipelineKey,
   }) {
     if (!_controller.diagnostics.mkvpropedit.available) {
       throw Exception('导出简繁内封 MKV 需要 mkvpropedit。');
@@ -584,6 +653,7 @@ class _TaskPlanner {
         ..._hdrToneMappingUserChoiceLogLines(toneMapping.sourceClass),
         ...fontPipeline.warnings,
       ],
+      sharedFontPipelineKey: sharedFontPipelineKey,
     );
   }
 

@@ -51,10 +51,39 @@ void main() {
     expect(
       tester
           .widget<TextFormField>(
-            find.byKey(const ValueKey<String>('audio-bitrate-320k')).first,
+            find.byKey(const ValueKey<String>('audio-bitrate-field')).first,
           )
           .enabled,
       isFalse,
+    );
+    controller.dispose();
+  });
+
+  testWidgets('Audio_Settings_Tab commits CBR bitrate on blur', (
+    WidgetTester tester,
+  ) async {
+    final AemtController controller = _controller();
+    final MediaInfo media = _mediaInfo();
+    controller.debugSetMediaInfo(media);
+
+    await _pumpPanel(tester, controller, media);
+    await _tapTab(tester, '音频参数');
+    final Finder field = find
+        .byKey(const ValueKey<String>('audio-bitrate-field'))
+        .first;
+
+    await tester.enterText(field, '256K');
+    await tester.pump();
+    expect(
+      controller.audioStreamConfigs['C:/media/input.mkv#1']?.bitrate,
+      '320k',
+    );
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(
+      controller.audioStreamConfigs['C:/media/input.mkv#1']?.bitrate,
+      '256K',
     );
     controller.dispose();
   });
