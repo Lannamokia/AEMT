@@ -1465,6 +1465,7 @@ class ExportTask {
     String? commandPreview,
     String? log,
     String? error,
+    bool clearError = false,
   }) {
     return ExportTask(
       id: id,
@@ -1477,7 +1478,7 @@ class ExportTask {
       currentStep: currentStep ?? this.currentStep,
       commandPreview: commandPreview ?? this.commandPreview,
       log: log ?? this.log,
-      error: error ?? this.error,
+      error: clearError ? null : error ?? this.error,
     );
   }
 }

@@ -99,6 +99,7 @@ class _QueueRunner {
       currentStep: '准备任务资源',
       commandPreview: '',
       log: '',
+      clearError: true,
     );
     _controller._markChanged();
     TaskPlan? plan;
@@ -474,7 +475,7 @@ class _QueueRunner {
         currentStep: '',
         commandPreview: '',
         log: '',
-        error: null,
+        clearError: true,
       );
     }
     _controller._markChanged();

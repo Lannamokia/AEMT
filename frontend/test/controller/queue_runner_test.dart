@@ -314,6 +314,42 @@ void main() {
     },
   );
 
+  test('retry clears stale task error before rerun starts', () async {
+    final AemtController controller = AemtController(initializePlayer: false);
+    final List<String?> seenErrors = <String?>[];
+    controller.addListener(() {
+      if (controller.tasks.isNotEmpty) {
+        seenErrors.add(controller.tasks.first.error);
+      }
+    });
+    controller.debugTaskPlanBuilder = (ExportTask task) async {
+      return TaskPlan(
+        outputPath: task.outputPath,
+        commandPreview: 'preview',
+        steps: <CommandStep>[_cmdStep(description: '成功命令', exitCode: 0)],
+        workingDirectory: '.',
+        expectedDuration: const Duration(seconds: 1),
+      );
+    };
+    controller.tasks.add(
+      _queuedTask('t7').copyWith(
+        status: TaskStatus.failed,
+        progress: 0.35,
+        currentStep: '失败阶段',
+        commandPreview: 'old preview',
+        log: 'old log',
+        error: 'Exception: 旧错误',
+      ),
+    );
+
+    await controller.retryAll();
+
+    expect(seenErrors, contains(null));
+    expect(controller.tasks.first.status, TaskStatus.success);
+    expect(controller.tasks.first.error, isNull);
+    expect(controller.tasks.first.log, isNot(contains('旧错误')));
+  });
+
   test('temp cleanup guard only accepts aemt-owned temp subdirectories', () {
     final AemtController controller = AemtController(initializePlayer: false);
     final String tempRoot = Directory.systemTemp.path;
