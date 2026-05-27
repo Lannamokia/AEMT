@@ -391,13 +391,25 @@ class _EpisodicNamingTemplateEditorState
 }
 
 Widget toolChip(RuntimeToolInfo tool) {
+  return statusChip(
+    label: tool.name,
+    status: tool.available ? '已就绪' : '未找到',
+    ok: tool.available,
+  );
+}
+
+Widget statusChip({
+  required String label,
+  required String status,
+  required bool ok,
+}) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
-      color: tool.available ? const Color(0xFFE8F3EB) : const Color(0xFFFDECEC),
+      color: ok ? const Color(0xFFE8F3EB) : const Color(0xFFFDECEC),
       borderRadius: BorderRadius.circular(999),
     ),
-    child: Text('${tool.name}: ${tool.available ? '已就绪' : '未找到'}'),
+    child: Text('$label: $status'),
   );
 }
 

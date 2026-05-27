@@ -232,6 +232,18 @@ class _Home extends StatelessWidget {
                               toolChip(controller.diagnostics.ffprobe),
                               toolChip(controller.diagnostics.mkvpropedit),
                               toolChip(controller.diagnostics.sevenZip),
+                              toolChip(controller.diagnostics.pyftsubset),
+                              toolChip(controller.diagnostics.ttx),
+                              statusChip(
+                                label: 'fonttools',
+                                status:
+                                    controller.diagnostics.fontToolsVersion
+                                        ?.toString() ??
+                                    '未知',
+                                ok:
+                                    controller.diagnostics.fontToolsVersion !=
+                                    null,
+                              ),
                             ],
                           ),
                         ],
