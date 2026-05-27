@@ -102,12 +102,22 @@ class TaskPanel extends StatelessWidget {
                       child: ListView.builder(
                         controller: taskListScrollController,
                         itemCount: controller.tasks.length,
+                        findChildIndexCallback: (Key key) {
+                          if (key case ValueKey<String>(:final value)) {
+                            final int index = controller.tasks.indexWhere(
+                              (ExportTask task) => task.id == value,
+                            );
+                            return index == -1 ? null : index;
+                          }
+                          return null;
+                        },
                         itemBuilder: (BuildContext context, int index) {
                           final ExportTask task = controller.tasks[index];
                           final bool canShowLog =
                               task.log.isNotEmpty &&
                               task.status != TaskStatus.running;
                           return Padding(
+                            key: ValueKey<String>(task.id),
                             padding: const EdgeInsets.only(bottom: 8),
                             child: GestureDetector(
                               onSecondaryTapDown: canShowLog
@@ -118,65 +128,77 @@ class TaskPanel extends StatelessWidget {
                                           task,
                                         )
                                   : null,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Stack(
-                                  children: <Widget>[
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: softBox(),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: <Widget>[
-                                          Text(task.label),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            '${_profileLabel(task.profile)} / ${_statusLabel(task.status)}',
-                                          ),
-                                          if (task
-                                              .currentStep
-                                              .isNotEmpty) ...<Widget>[
-                                            const SizedBox(height: 6),
-                                            Text(task.currentStep),
-                                          ],
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            '${(task.progress * 100).clamp(0, 100).toStringAsFixed(task.status == TaskStatus.running ? 1 : 0)}%',
-                                          ),
-                                          if (task.error
-                                              case final String
-                                                  error) ...<Widget>[
+                              child: Semantics(
+                                container: true,
+                                excludeSemantics: true,
+                                label: _taskSemanticsLabel(task),
+                                value: _taskSemanticsValue(task),
+                                button: canShowLog,
+                                onTap: canShowLog
+                                    ? () => unawaited(
+                                        _showTaskLogDialog(context, task),
+                                      )
+                                    : null,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Stack(
+                                    children: <Widget>[
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: softBox(),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Text(task.label),
                                             const SizedBox(height: 6),
                                             Text(
-                                              error,
-                                              style: const TextStyle(
-                                                color: Colors.redAccent,
+                                              '${_profileLabel(task.profile)} / ${_statusLabel(task.status)}',
+                                            ),
+                                            if (task
+                                                .currentStep
+                                                .isNotEmpty) ...<Widget>[
+                                              const SizedBox(height: 6),
+                                              Text(task.currentStep),
+                                            ],
+                                            const SizedBox(height: 6),
+                                            Text(_taskProgressLabel(task)),
+                                            if (task.error
+                                                case final String
+                                                    error) ...<Widget>[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                error,
+                                                style: const TextStyle(
+                                                  color: Colors.redAccent,
+                                                ),
                                               ),
-                                            ),
+                                            ],
                                           ],
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                    Positioned.fill(
-                                      child: IgnorePointer(
-                                        child: Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: FractionallySizedBox(
-                                            widthFactor: _taskOverlayWidth(
-                                              task,
-                                            ),
-                                            heightFactor: 1,
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: _taskOverlayColor(task),
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: FractionallySizedBox(
+                                              widthFactor: _taskOverlayWidth(
+                                                task,
+                                              ),
+                                              heightFactor: 1,
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  color: _taskOverlayColor(
+                                                    task,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -233,6 +255,29 @@ class TaskPanel extends StatelessWidget {
       },
     );
   }
+}
+
+String _taskSemanticsLabel(ExportTask task) {
+  final List<String> parts = <String>[
+    task.label,
+    _profileLabel(task.profile),
+    _statusLabel(task.status),
+  ];
+  if (task.currentStep.isNotEmpty) {
+    parts.add(task.currentStep);
+  }
+  if (task.error case final String error) {
+    parts.add(error);
+  }
+  return parts.join('，');
+}
+
+String _taskSemanticsValue(ExportTask task) {
+  return _taskProgressLabel(task);
+}
+
+String _taskProgressLabel(ExportTask task) {
+  return '${(task.progress * 100).clamp(0, 100).toStringAsFixed(task.status == TaskStatus.running ? 1 : 0)}%';
 }
 
 double _taskOverlayWidth(ExportTask task) {
