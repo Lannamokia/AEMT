@@ -155,10 +155,16 @@ class _TaskPlanner {
             workDir,
           )
         : await debugAttachmentExtractor(info, workDir);
+    final DebugSystemFontResolver? debugSystemFontResolver =
+        _controller.debugSystemFontResolver;
+    final List<ResolvedFontFile> systemFonts = debugSystemFontResolver == null
+        ? await _controller._fontAssetService.resolveSystemFontFiles()
+        : await debugSystemFontResolver();
     return _runFontPipeline(
       bindings: bindings,
       importedFonts: importedFonts,
       extractedAttachments: extractedAttachments,
+      systemFonts: systemFonts,
       workDir: workDir,
     );
   }
@@ -184,6 +190,7 @@ class _TaskPlanner {
     required List<SubtitleBinding> bindings,
     required List<ResolvedFontFile> importedFonts,
     required List<ResolvedFontFile> extractedAttachments,
+    required List<ResolvedFontFile> systemFonts,
     required String workDir,
   }) async {
     final List<String> subtitlePaths = <String>[
@@ -226,6 +233,7 @@ class _TaskPlanner {
     final List<ResolvedFontFile> candidates = <ResolvedFontFile>[
       ...importedFonts,
       ...extractedAttachments,
+      ...systemFonts,
     ];
     final FontMatchResult matchResult = _controller._fontAssetService
         .matchFonts(matchableIndex, candidates);

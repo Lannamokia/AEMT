@@ -21,6 +21,7 @@ void main() {
             const <ResolvedFontFile>[];
     strict.debugAttachmentExtractor = (MediaInfo info, String workDir) async =>
         const <ResolvedFontFile>[];
+    strict.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
 
     await expectLater(
       strict.debugBuildTaskPlan(_task()),
@@ -41,6 +42,7 @@ void main() {
             const <ResolvedFontFile>[];
     permissive.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    permissive.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
 
     final TaskPlan plan = await permissive.debugBuildTaskPlan(_task());
 
@@ -66,6 +68,7 @@ void main() {
             const <ResolvedFontFile>[_exampleFont];
     controller.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    controller.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
 
     final TaskPlan hardsub = await controller.debugBuildTaskPlan(_task());
 
@@ -115,6 +118,7 @@ void main() {
             const <ResolvedFontFile>[_exampleFont];
     controller.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    controller.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
 
     final TaskPlan hardsub = await controller.debugBuildTaskPlan(_task());
 
@@ -143,6 +147,34 @@ void main() {
     controller.dispose();
   });
 
+  test('system font resolver supplies fallback font candidates', () async {
+    final Directory workDir = await Directory.systemTemp.createTemp(
+      'aemt_system_font_fallback_',
+    );
+    final String assPath = p.join(workDir.path, 'system.ass');
+    await File(assPath).writeAsString(_assText('System Font'));
+    final AemtController controller = _controllerForPlan(assPath);
+    controller.debugFontResolver =
+        (List<String> importedFontSources, String workDir) async =>
+            const <ResolvedFontFile>[];
+    controller.debugAttachmentExtractor =
+        (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    controller.debugSystemFontResolver = () async => const <ResolvedFontFile>[
+      _systemFont,
+    ];
+
+    final TaskPlan plan = await controller.debugBuildTaskPlan(_task());
+
+    expect(plan.initialLogLines, isNot(contains('WARN: 字体 system font 缺失')));
+    final FontSubsetStepPlan subsetStep = plan.steps
+        .where((CommandStep step) => step.fontSubsetStep != null)
+        .single
+        .fontSubsetStep!;
+    expect(subsetStep.outputFont.fileName, 'System.ttf');
+    expect(subsetStep.outputFont.path, endsWith('System.subset.ttf'));
+    controller.dispose();
+  });
+
   test('Property 19: Diagnostic comment-line preview', () async {
     final Directory workDir = await Directory.systemTemp.createTemp(
       'aemt_diagnostics_',
@@ -158,6 +190,7 @@ void main() {
             const <ResolvedFontFile>[];
     controller.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    controller.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
     controller.setVideoEncodingMode('libx264', 'CRF');
     controller.setVideoEncodingField('libx264', crf: 20);
     controller.setAudioStreamConfig(
@@ -195,6 +228,7 @@ void main() {
             const <ResolvedFontFile>[];
     controller.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    controller.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
 
     final TaskPlan plan = await controller.debugBuildTaskPlan(_task());
 
@@ -221,6 +255,7 @@ void main() {
             const <ResolvedFontFile>[];
     audioBad.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    audioBad.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
     audioBad.setAudioStreamConfig(
       'C:/input.mkv#1',
       const AudioStreamConfig.defaultAac().copyWith(bitrate: '192kbps'),
@@ -243,6 +278,7 @@ void main() {
             const <ResolvedFontFile>[];
     videoBad.debugAttachmentExtractor =
         (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+    videoBad.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
     videoBad.setVideoEncodingMode('libx264', 'CBR');
     videoBad.setVideoEncodingField('libx264', bitrate: '8000kbps');
     await expectLater(
@@ -266,6 +302,7 @@ void main() {
             const <ResolvedFontFile>[];
     toneBad.debugAttachmentExtractor = (MediaInfo info, String workDir) async =>
         const <ResolvedFontFile>[];
+    toneBad.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
     toneBad.setToneMappingConfig(
       const ToneMappingConfig.defaultBt709().copyWith(peak: '0'),
     );
@@ -298,6 +335,7 @@ void main() {
             const <ResolvedFontFile>[];
     dolby.debugAttachmentExtractor = (MediaInfo info, String workDir) async =>
         const <ResolvedFontFile>[];
+    dolby.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
 
     final TaskPlan dolbyPlan = await dolby.debugBuildTaskPlan(_task());
     expect(
@@ -315,6 +353,7 @@ void main() {
             const <ResolvedFontFile>[];
     hdrOff.debugAttachmentExtractor = (MediaInfo info, String workDir) async =>
         const <ResolvedFontFile>[];
+    hdrOff.debugSystemFontResolver = () async => const <ResolvedFontFile>[];
     hdrOff.setToneMappingConfig(
       const ToneMappingConfig.defaultBt709().copyWith(
         tonemapMode: 'off',
@@ -340,6 +379,15 @@ const ResolvedFontFile _exampleFont = ResolvedFontFile(
   mimeType: 'font/ttf',
   familyNames: <String>{'Example Font'},
   fullNames: <String>{'Example Font Regular'},
+);
+
+const ResolvedFontFile _systemFont = ResolvedFontFile(
+  path: 'C:/Windows/Fonts/System.ttf',
+  fileName: 'System.ttf',
+  mimeType: 'font/ttf',
+  source: FontSourceKind.system,
+  familyNames: <String>{'System Font'},
+  fullNames: <String>{'System Font Regular'},
 );
 
 AemtController _controllerForPlan(

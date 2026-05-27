@@ -183,6 +183,69 @@ class FontAssetService {
     return result;
   }
 
+  Future<List<ResolvedFontFile>> resolveSystemFontFiles({
+    List<String>? fontDirectories,
+  }) async {
+    final List<String> directories =
+        fontDirectories ?? _defaultSystemFontDirectories();
+    final List<ResolvedFontFile> result = <ResolvedFontFile>[];
+    final Set<String> seenPaths = <String>{};
+    for (final String directoryPath in directories) {
+      final Directory directory = Directory(directoryPath);
+      if (!directory.existsSync()) {
+        continue;
+      }
+      final List<FileSystemEntity> entries = directory.listSync(
+        recursive: false,
+        followLinks: false,
+      );
+      entries.sort(
+        (FileSystemEntity a, FileSystemEntity b) =>
+            p.basename(a.path).compareTo(p.basename(b.path)),
+      );
+      for (final File file in entries.whereType<File>()) {
+        if (!isFontFile(file.path)) {
+          continue;
+        }
+        final String normalizedPath = p.normalize(p.absolute(file.path));
+        if (!seenPaths.add(normalizedPath.toLowerCase())) {
+          continue;
+        }
+        result.addAll(
+          await _enrichFont(
+            ResolvedFontFile(
+              path: file.path,
+              fileName: p.basename(file.path),
+              mimeType: mimeTypeForFont(file.path),
+              source: FontSourceKind.system,
+              importOrder: result.length,
+            ),
+          ),
+        );
+      }
+    }
+    return result;
+  }
+
+  List<String> _defaultSystemFontDirectories() {
+    if (!Platform.isWindows) {
+      return const <String>[];
+    }
+    final Set<String> directories = <String>{};
+    final String? windir = Platform.environment['WINDIR'];
+    directories.add(
+      p.join(
+        windir == null || windir.trim().isEmpty ? r'C:\Windows' : windir,
+        'Fonts',
+      ),
+    );
+    final String? localAppData = Platform.environment['LOCALAPPDATA'];
+    if (localAppData != null && localAppData.trim().isNotEmpty) {
+      directories.add(p.join(localAppData, 'Microsoft', 'Windows', 'Fonts'));
+    }
+    return directories.toList();
+  }
+
   Future<List<ResolvedFontFile>> extractEnabledInputAttachments(
     MediaInfo info,
     String tempDir,
@@ -309,7 +372,9 @@ class FontAssetService {
     final List<ResolvedFontFile> ordered = <ResolvedFontFile>[...candidates]
       ..sort((ResolvedFontFile a, ResolvedFontFile b) {
         if (a.source != b.source) {
-          return a.source == FontSourceKind.attachment ? -1 : 1;
+          return _fontSourcePriority(
+            a.source,
+          ).compareTo(_fontSourcePriority(b.source));
         }
         return a.importOrder.compareTo(b.importOrder);
       });
@@ -330,6 +395,15 @@ class FontAssetService {
       }
     }
     return FontMatchResult(matched: matched, missing: missing);
+  }
+
+  int _fontSourcePriority(FontSourceKind source) {
+    return switch (source) {
+      FontSourceKind.attachment => 0,
+      FontSourceKind.imported => 1,
+      FontSourceKind.system => 2,
+      FontSourceKind.subsetted => 3,
+    };
   }
 
   List<FontSubsetStepPlan> planSubsetFontSteps(
@@ -806,6 +880,9 @@ class FontAssetService {
     final Map<String, List<ResolvedFontFile>> buckets =
         <String, List<ResolvedFontFile>>{};
     for (final ResolvedFontFile font in candidates) {
+      if (font.source == FontSourceKind.system) {
+        continue;
+      }
       for (final String familyName in font.familyNames) {
         final String key = <Object>[
           normalizeFontName(familyName),

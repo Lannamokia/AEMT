@@ -109,6 +109,49 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Default,\u200Eおはよう
     },
   );
 
+  test('system fonts are fallback candidates after imported fonts', () {
+    final FontMatchResult result =
+        const FontAssetService(ffmpegPath: null, sevenZipPath: null).matchFonts(
+          const SubtitleCharIndex(<String, Set<int>>{
+            'Example Font': <int>{0x41},
+            'System Font': <int>{0x42},
+          }),
+          const <ResolvedFontFile>[
+            ResolvedFontFile(
+              path: 'C:/fonts/system-example.ttf',
+              fileName: 'system-example.ttf',
+              mimeType: 'font/ttf',
+              source: FontSourceKind.system,
+              importOrder: 0,
+              familyNames: <String>{'Example Font'},
+              maxpNumGlyphs: 10,
+            ),
+            ResolvedFontFile(
+              path: 'C:/fonts/imported-example.ttf',
+              fileName: 'imported-example.ttf',
+              mimeType: 'font/ttf',
+              source: FontSourceKind.imported,
+              importOrder: 1,
+              familyNames: <String>{'Example Font'},
+              maxpNumGlyphs: 10,
+            ),
+            ResolvedFontFile(
+              path: 'C:/fonts/system-only.ttf',
+              fileName: 'system-only.ttf',
+              mimeType: 'font/ttf',
+              source: FontSourceKind.system,
+              importOrder: 2,
+              familyNames: <String>{'System Font'},
+              maxpNumGlyphs: 10,
+            ),
+          ],
+        );
+
+    expect(result.missing, isEmpty);
+    expect(result.matched['example font']!.fileName, 'imported-example.ttf');
+    expect(result.matched['system font']!.fileName, 'system-only.ttf');
+  });
+
   test('Source Han regional aliases match common ASS font names', () {
     final FontMatchResult result =
         const FontAssetService(ffmpegPath: null, sevenZipPath: null).matchFonts(

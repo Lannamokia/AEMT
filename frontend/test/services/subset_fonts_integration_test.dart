@@ -102,6 +102,44 @@ void main() {
       expect(await readSfntFontFaces(result.fonts.single.path), isNotEmpty);
     },
   );
+
+  test(
+    'system font scan enriches font files from configured directories',
+    () async {
+      final String? fontPath = _findFixtureFont();
+      if (fontPath == null) {
+        markTestSkipped(_skipReason);
+        return;
+      }
+      final Directory root = await Directory.systemTemp.createTemp(
+        'aemt_system_font_scan_$_seed',
+      );
+      final String copiedFontPath = p.join(root.path, p.basename(fontPath));
+      await File(fontPath).copy(copiedFontPath);
+      await File(p.join(root.path, 'not-a-font.txt')).writeAsString('ignored');
+
+      final List<ResolvedFontFile> fonts = await const FontAssetService(
+        ffmpegPath: null,
+        sevenZipPath: null,
+      ).resolveSystemFontFiles(fontDirectories: <String>[root.path]);
+
+      expect(fonts, isNotEmpty);
+      expect(
+        fonts.every(
+          (ResolvedFontFile font) => font.source == FontSourceKind.system,
+        ),
+        isTrue,
+      );
+      expect(
+        fonts.map((ResolvedFontFile font) => font.fileName),
+        isNot(contains('not-a-font.txt')),
+      );
+      expect(
+        fonts.expand((ResolvedFontFile font) => font.familyNames),
+        isNotEmpty,
+      );
+    },
+  );
 }
 
 const String _skipReason =

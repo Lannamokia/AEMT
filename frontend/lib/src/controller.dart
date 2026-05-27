@@ -33,6 +33,7 @@ typedef DebugFontResolver =
     );
 typedef DebugAttachmentExtractor =
     Future<List<ResolvedFontFile>> Function(MediaInfo info, String workDir);
+typedef DebugSystemFontResolver = Future<List<ResolvedFontFile>> Function();
 
 class AemtController extends ChangeNotifier {
   AemtController({@visibleForTesting bool initializePlayer = true})
@@ -156,6 +157,8 @@ class AemtController extends ChangeNotifier {
   DebugFontResolver? debugFontResolver;
   @visibleForTesting
   DebugAttachmentExtractor? debugAttachmentExtractor;
+  @visibleForTesting
+  DebugSystemFontResolver? debugSystemFontResolver;
   final Map<String, EncoderTuning> encoderTunings = <String, EncoderTuning>{
     'libx264': const EncoderTuning(
       key: 'libx264',
@@ -810,12 +813,14 @@ class AemtController extends ChangeNotifier {
     required List<SubtitleBinding> bindings,
     required List<ResolvedFontFile> importedFonts,
     required List<ResolvedFontFile> extractedAttachments,
+    List<ResolvedFontFile> systemFonts = const <ResolvedFontFile>[],
     required String workDir,
   }) {
     return _taskPlanner._runFontPipeline(
       bindings: bindings,
       importedFonts: importedFonts,
       extractedAttachments: extractedAttachments,
+      systemFonts: systemFonts,
       workDir: workDir,
     );
   }

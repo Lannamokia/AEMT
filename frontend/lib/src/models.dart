@@ -19,7 +19,7 @@ enum SourceColorClass {
   unknown,
 }
 
-enum FontSourceKind { imported, attachment, subsetted }
+enum FontSourceKind { imported, attachment, system, subsetted }
 
 const Map<String, List<String>> kSupportedRcModes = <String, List<String>>{
   'libx264': <String>['CRF', 'CBR', 'VBR'],
