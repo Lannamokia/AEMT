@@ -442,6 +442,7 @@ class FontAssetService {
             faces.expand((SfntFontFace face) => face.cmapCodepoints).toSet(),
       );
       final Set<int> missing = plan.codepoints
+          .where((int codepoint) => !_isNonRenderingControl(codepoint))
           .where((int codepoint) => !cmap.contains(codepoint))
           .toSet();
       if (missing.isNotEmpty) {
@@ -458,6 +459,10 @@ class FontAssetService {
           ? '字体 ${plan.originalFont.fileName} 标记为受限嵌入...'
           : null,
     );
+  }
+
+  bool _isNonRenderingControl(int codepoint) {
+    return codepoint == 0x09 || codepoint == 0x0A || codepoint == 0x0D;
   }
 
   String _formatUnicodeFile(List<int> codepoints) {

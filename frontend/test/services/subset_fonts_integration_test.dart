@@ -17,7 +17,25 @@ void main() {
       return;
     }
 
-    final Set<int> codepoints = <int>{0x41, 0x42, 0x43, 0x61, 0x62, 0x63};
+    final Set<int> codepoints = <int>{
+      0x09,
+      0x0A,
+      0x0D,
+      0x41,
+      0x42,
+      0x43,
+      0x61,
+      0x62,
+      0x63,
+    };
+    final Set<int> renderingCodepoints = <int>{
+      0x41,
+      0x42,
+      0x43,
+      0x61,
+      0x62,
+      0x63,
+    };
     final Directory workDir = await Directory.systemTemp.createTemp(
       'aemt_subset_round_trip_$_seed',
     );
@@ -43,7 +61,7 @@ void main() {
     )).expand((SfntFontFace face) => face.cmapCodepoints).toSet();
     expect(
       cmap,
-      containsAll(codepoints),
+      containsAll(renderingCodepoints),
       reason: 'seed=$_seed output=${result.fonts.single.path}',
     );
   });
