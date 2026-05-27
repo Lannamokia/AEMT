@@ -442,7 +442,7 @@ class FontAssetService {
             faces.expand((SfntFontFace face) => face.cmapCodepoints).toSet(),
       );
       final Set<int> missing = plan.codepoints
-          .where((int codepoint) => !_isNonRenderingControl(codepoint))
+          .where((int codepoint) => !_isNonRenderingCodepoint(codepoint))
           .where((int codepoint) => !cmap.contains(codepoint))
           .toSet();
       if (missing.isNotEmpty) {
@@ -461,8 +461,20 @@ class FontAssetService {
     );
   }
 
-  bool _isNonRenderingControl(int codepoint) {
-    return codepoint == 0x09 || codepoint == 0x0A || codepoint == 0x0D;
+  bool _isNonRenderingCodepoint(int codepoint) {
+    if (codepoint == 0x09 || codepoint == 0x0A || codepoint == 0x0D) {
+      return true;
+    }
+    if (codepoint >= 0x200B && codepoint <= 0x200F) {
+      return true;
+    }
+    if (codepoint >= 0x202A && codepoint <= 0x202E) {
+      return true;
+    }
+    if (codepoint >= 0x2060 && codepoint <= 0x206F) {
+      return true;
+    }
+    return codepoint >= 0xFE00 && codepoint <= 0xFE0F;
   }
 
   String _formatUnicodeFile(List<int> codepoints) {
