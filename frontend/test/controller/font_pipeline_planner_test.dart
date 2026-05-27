@@ -233,14 +233,49 @@ void main() {
     final TaskPlan plan = await controller.debugBuildTaskPlan(_task());
 
     expect(plan.commandPreview, contains('-c:a aac -b:a 320k -ar 48000'));
-    expect(plan.commandPreview, contains('-b:v 2500k -maxrate 3750k'));
-    expect(plan.commandPreview, isNot(contains('-crf')));
+    expect(
+      plan.commandPreview,
+      contains('-crf 23 -maxrate 3750k -bufsize 7500k'),
+    );
     expect(plan.commandPreview, isNot(contains('# video')));
     expect(plan.commandPreview, isNot(contains('# tonemap')));
     expect(plan.commandPreview, isNot(contains('zscale')));
     expect(plan.commandPreview, isNot(contains('tonemap=')));
     controller.dispose();
   });
+
+  test(
+    'output video codec selection applies to hardsub and mux profiles',
+    () async {
+      final Directory workDir = await Directory.systemTemp.createTemp(
+        'aemt_codec_select_',
+      );
+      final String srtPath = p.join(workDir.path, 'codec.srt');
+      await File(
+        srtPath,
+      ).writeAsString('1\n00:00:00,000 --> 00:00:01,000\nHi\n');
+      final AemtController controller = _controllerForPlan(srtPath)
+        ..setHardsubVideoCodec(OutputVideoCodec.h265)
+        ..setMuxVideoCodec(OutputVideoCodec.h264);
+      controller.diagnostics = _diagnostics(hasMkvpropedit: true);
+      controller.debugFontResolver =
+          (List<String> importedFontSources, String workDir) async =>
+              const <ResolvedFontFile>[];
+      controller.debugAttachmentExtractor =
+          (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+      controller.debugSystemFontResolver = () async =>
+          const <ResolvedFontFile>[];
+
+      final TaskPlan hardsub = await controller.debugBuildTaskPlan(_task());
+      final TaskPlan mux = await controller.debugBuildTaskPlan(
+        _task(profile: ExportProfile.muxMkv),
+      );
+
+      expect(hardsub.commandPreview, contains('-c:v libx265'));
+      expect(mux.commandPreview, contains('-c:v libx264'));
+      controller.dispose();
+    },
+  );
 
   test('Property 20: Validation rejects malformed input', () async {
     final Directory workDir = await Directory.systemTemp.createTemp(

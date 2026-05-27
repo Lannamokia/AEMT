@@ -10,6 +10,8 @@ enum CompressionMode { generic, episodic }
 
 enum HardwareMode { auto, software, nvenc, qsv, amf }
 
+enum OutputVideoCodec { h264, h265 }
+
 enum SourceColorClass {
   sdrBt709,
   sdrWideGamut,
@@ -461,14 +463,15 @@ class VideoEncodingConfig {
 
   factory VideoEncodingConfig.defaultsFor(String encoderKey) {
     final bool software = encoderKey == 'libx264' || encoderKey == 'libx265';
+    final bool hevc = encoderKey.contains('265') || encoderKey.contains('hevc');
     return VideoEncodingConfig(
       mode: software ? 'CRF' : 'VBR',
       userOverridden: false,
       crf: 23,
-      bitrate: '',
-      maxrate: '',
+      bitrate: hevc ? '2000k' : '2500k',
+      maxrate: hevc ? '3000k' : '3750k',
       minrate: '',
-      bufsize: '',
+      bufsize: hevc ? '6000k' : '7500k',
       qpI: 23,
       qpP: 25,
       qpB: 28,
@@ -928,10 +931,8 @@ class EncodingSettingsSnapshot {
     required this.outputResolution,
     required this.outputFps,
     required this.outputDirectory,
-    required this.avcBitrate,
-    required this.avcMaxrate,
-    required this.hevcBitrate,
-    required this.hevcMaxrate,
+    required this.hardsubVideoCodec,
+    required this.muxVideoCodec,
     required this.encoderTunings,
     this.audioStreamConfigs = const <String, AudioStreamConfig>{},
     this.audioDefaultProfile = const AudioStreamConfig.defaultAac(),
@@ -955,10 +956,8 @@ class EncodingSettingsSnapshot {
   final String outputResolution;
   final String outputFps;
   final String outputDirectory;
-  final String avcBitrate;
-  final String avcMaxrate;
-  final String hevcBitrate;
-  final String hevcMaxrate;
+  final OutputVideoCodec hardsubVideoCodec;
+  final OutputVideoCodec muxVideoCodec;
   final Map<String, EncoderTuningSelection> encoderTunings;
   final Map<String, AudioStreamConfig> audioStreamConfigs;
   final AudioStreamConfig audioDefaultProfile;
@@ -972,7 +971,7 @@ class EncodingSettingsSnapshot {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'type': 'aemt.encoding-settings',
-      'version': 2,
+      'version': 3,
       'compressionMode': compressionMode.name,
       'hardwareMode': hardwareMode.name,
       'outputFileNameOverride': outputFileNameOverride,
@@ -985,10 +984,8 @@ class EncodingSettingsSnapshot {
       'outputResolution': outputResolution,
       'outputFps': outputFps,
       'outputDirectory': outputDirectory,
-      'avcBitrate': avcBitrate,
-      'avcMaxrate': avcMaxrate,
-      'hevcBitrate': hevcBitrate,
-      'hevcMaxrate': hevcMaxrate,
+      'hardsubVideoCodec': hardsubVideoCodec.name,
+      'muxVideoCodec': muxVideoCodec.name,
       'encoderTunings': encoderTunings.map(
         (String key, EncoderTuningSelection value) =>
             MapEntry(key, value.toJson()),
@@ -1015,7 +1012,7 @@ class EncodingSettingsSnapshot {
     final int version = json['version'] is int
         ? json['version'] as int
         : int.tryParse((json['version'] ?? '').toString()) ?? 0;
-    if (version < 1 || version > 2) {
+    if (version < 1 || version > 3) {
       throw FormatException('不支持的编码参数配置版本: $version');
     }
     final Map<String, dynamic> tuningJson = _readObjectMap(
@@ -1038,6 +1035,21 @@ class EncodingSettingsSnapshot {
       json,
       'audioDefaultProfile',
     );
+    final Map<String, VideoEncodingConfig> parsedVideoConfigs = videoConfigJson
+        .map(
+          (String key, dynamic value) => MapEntry(
+            key,
+            VideoEncodingConfig.fromJson(
+              value is Map<String, dynamic>
+                  ? value
+                  : (value as Map).map(
+                      (dynamic innerKey, dynamic innerValue) =>
+                          MapEntry(innerKey.toString(), innerValue),
+                    ),
+              encoderKey: key,
+            ),
+          ),
+        );
     return EncodingSettingsSnapshot(
       compressionMode: _enumByName(
         CompressionMode.values,
@@ -1059,10 +1071,16 @@ class EncodingSettingsSnapshot {
       outputResolution: (json['outputResolution'] ?? '').toString(),
       outputFps: (json['outputFps'] ?? '').toString(),
       outputDirectory: (json['outputDirectory'] ?? '').toString(),
-      avcBitrate: (json['avcBitrate'] ?? '').toString(),
-      avcMaxrate: (json['avcMaxrate'] ?? '').toString(),
-      hevcBitrate: (json['hevcBitrate'] ?? '').toString(),
-      hevcMaxrate: (json['hevcMaxrate'] ?? '').toString(),
+      hardsubVideoCodec: _enumByName(
+        OutputVideoCodec.values,
+        json['hardsubVideoCodec'],
+        OutputVideoCodec.h264,
+      ),
+      muxVideoCodec: _enumByName(
+        OutputVideoCodec.values,
+        json['muxVideoCodec'],
+        OutputVideoCodec.h265,
+      ),
       encoderTunings: tuningJson.map(
         (String key, dynamic value) => MapEntry(
           key,
@@ -1092,19 +1110,9 @@ class EncodingSettingsSnapshot {
       audioDefaultProfile: audioDefaultJson.isEmpty
           ? const AudioStreamConfig.defaultAac()
           : AudioStreamConfig.fromJson(audioDefaultJson),
-      videoEncodingConfigs: videoConfigJson.map(
-        (String key, dynamic value) => MapEntry(
-          key,
-          VideoEncodingConfig.fromJson(
-            value is Map<String, dynamic>
-                ? value
-                : (value as Map).map(
-                    (dynamic innerKey, dynamic innerValue) =>
-                        MapEntry(innerKey.toString(), innerValue),
-                  ),
-            encoderKey: key,
-          ),
-        ),
+      videoEncodingConfigs: _migrateLegacyVideoBitrates(
+        parsedVideoConfigs,
+        json,
       ),
       toneMappingConfig: toneMappingJson.isEmpty
           ? const ToneMappingConfig.defaultBt709()
@@ -1117,6 +1125,70 @@ class EncodingSettingsSnapshot {
           : null,
     );
   }
+}
+
+Map<String, VideoEncodingConfig> _migrateLegacyVideoBitrates(
+  Map<String, VideoEncodingConfig> configs,
+  Map<String, dynamic> json,
+) {
+  final String avcBitrate = (json['avcBitrate'] ?? '').toString().trim();
+  final String avcMaxrate = (json['avcMaxrate'] ?? '').toString().trim();
+  final String hevcBitrate = (json['hevcBitrate'] ?? '').toString().trim();
+  final String hevcMaxrate = (json['hevcMaxrate'] ?? '').toString().trim();
+  if (avcBitrate.isEmpty &&
+      avcMaxrate.isEmpty &&
+      hevcBitrate.isEmpty &&
+      hevcMaxrate.isEmpty) {
+    return configs;
+  }
+  final Map<String, VideoEncodingConfig> migrated =
+      Map<String, VideoEncodingConfig>.from(configs);
+  void migrateFamily(List<String> encoders, String bitrate, String maxrate) {
+    for (final String encoder in encoders) {
+      final bool hasExplicitConfig = migrated.containsKey(encoder);
+      final VideoEncodingConfig current =
+          migrated[encoder] ?? VideoEncodingConfig.defaultsFor(encoder);
+      migrated[encoder] = current.copyWith(
+        bitrate:
+            (!hasExplicitConfig || current.bitrate.trim().isEmpty) &&
+                bitrate.isNotEmpty
+            ? bitrate
+            : null,
+        maxrate:
+            (!hasExplicitConfig || current.maxrate.trim().isEmpty) &&
+                maxrate.isNotEmpty
+            ? maxrate
+            : null,
+        bufsize:
+            (!hasExplicitConfig || current.bufsize.trim().isEmpty) &&
+                maxrate.isNotEmpty
+            ? _doubleLegacyBitrate(maxrate)
+            : null,
+      );
+    }
+  }
+
+  migrateFamily(
+    const <String>['libx264', 'h264_nvenc', 'h264_qsv', 'h264_amf'],
+    avcBitrate,
+    avcMaxrate,
+  );
+  migrateFamily(
+    const <String>['libx265', 'hevc_nvenc', 'hevc_qsv', 'hevc_amf'],
+    hevcBitrate,
+    hevcMaxrate,
+  );
+  return migrated;
+}
+
+String _doubleLegacyBitrate(String bitrate) {
+  final RegExpMatch? match = RegExp(
+    r'^(\d+)([kKmM])$',
+  ).firstMatch(bitrate.trim());
+  if (match == null) {
+    return bitrate;
+  }
+  return '${int.parse(match.group(1)!) * 2}${match.group(2)!}';
 }
 
 class RuntimeToolInfo {

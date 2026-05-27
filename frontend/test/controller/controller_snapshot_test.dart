@@ -74,10 +74,8 @@ void main() {
         outputResolution: '1920x1080',
         outputFps: '23.976',
         outputDirectory: 'C:/out',
-        avcBitrate: '2500k',
-        avcMaxrate: '3750k',
-        hevcBitrate: '2000k',
-        hevcMaxrate: '3000k',
+        hardsubVideoCodec: OutputVideoCodec.h265,
+        muxVideoCodec: OutputVideoCodec.h264,
         encoderTunings: const <String, EncoderTuningSelection>{},
         audioStreamConfigs: <String, AudioStreamConfig>{
           'C:/other.mkv#1': importedAudio,
@@ -95,6 +93,8 @@ void main() {
     expect(controller.audioDefaultProfile, importedDefault);
     expect(controller.audioStreamConfigs['C:/current.mkv#1'], importedAudio);
     expect(controller.videoEncodingConfigs['libx265'], importedVideo);
+    expect(controller.hardsubVideoCodec, OutputVideoCodec.h265);
+    expect(controller.muxVideoCodec, OutputVideoCodec.h264);
     expect(controller.toneMappingConfig, importedTone);
     expect(controller.continueOnMissingFont, isTrue);
     expect(controller.sourceHanEllipsisFix, isFalse);

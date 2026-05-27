@@ -453,6 +453,12 @@ class _Home extends StatelessWidget {
                         runSpacing: 8,
                         children: <Widget>[
                           OutlinedButton.icon(
+                            onPressed: () =>
+                                showEncodingParameterGuide(context),
+                            icon: const Icon(Icons.menu_book_outlined),
+                            label: const Text('编码参数设置指引'),
+                          ),
+                          OutlinedButton.icon(
                             onPressed: controller.importEncodingSettings,
                             icon: const Icon(Icons.upload_file_outlined),
                             label: const Text('导入配置'),
@@ -486,4 +492,44 @@ class _Home extends StatelessWidget {
       ),
     );
   }
+}
+
+const String kEncodingParameterGuideText = '''
+面对字幕组场景的成片压制，推荐使用 slow、slower，或对应硬件编码器等效的 preset。
+
+目标大小约 500MB 时，H264 / AVC 推荐：
+CRF：libx264 使用 CRF 22-24，maxrate 3750k，bufsize 7500k，preset slow 或 slower。
+CBR：目标码率 2500k，maxrate 2500k，bufsize 5000k。
+VBR：目标码率 2500k，maxrate 3750k，bufsize 7500k。
+
+目标大小约 500MB 时，H265 / HEVC 推荐：
+CRF：libx265 使用 CRF 24-26，maxrate 3000k，bufsize 6000k，preset slow 或 slower。
+CBR：目标码率 2000k，maxrate 2000k，bufsize 4000k。
+VBR：目标码率 2000k，maxrate 3000k，bufsize 6000k。
+
+硬件编码器 preset 建议选择偏质量档位：
+NVENC 使用 p5-p7，QSV 使用 slow 或 quality，AMF 使用 quality。
+
+音频编码器推荐：
+AAC，码率 256k，采样率 44100，声道布局与源相同。
+''';
+
+Future<void> showEncodingParameterGuide(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('编码参数设置指引'),
+        content: const SingleChildScrollView(
+          child: SelectableText(kEncodingParameterGuideText),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      );
+    },
+  );
 }

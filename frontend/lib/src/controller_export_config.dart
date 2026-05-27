@@ -55,10 +55,8 @@ class _ExportConfig {
       outputResolution: _controller.outputResolution,
       outputFps: _controller.outputFps,
       outputDirectory: _controller.outputDirectory,
-      avcBitrate: _controller.avcBitrate,
-      avcMaxrate: _controller.avcMaxrate,
-      hevcBitrate: _controller.hevcBitrate,
-      hevcMaxrate: _controller.hevcMaxrate,
+      hardsubVideoCodec: _controller.hardsubVideoCodec,
+      muxVideoCodec: _controller.muxVideoCodec,
       audioStreamConfigs: Map<String, AudioStreamConfig>.from(
         _controller.audioStreamConfigs,
       ),
@@ -95,10 +93,8 @@ class _ExportConfig {
     _controller.outputResolution = snapshot.outputResolution;
     _controller.outputFps = snapshot.outputFps;
     _controller.outputDirectory = snapshot.outputDirectory;
-    _controller.avcBitrate = snapshot.avcBitrate;
-    _controller.avcMaxrate = snapshot.avcMaxrate;
-    _controller.hevcBitrate = snapshot.hevcBitrate;
-    _controller.hevcMaxrate = snapshot.hevcMaxrate;
+    _controller.hardsubVideoCodec = snapshot.hardsubVideoCodec;
+    _controller.muxVideoCodec = snapshot.muxVideoCodec;
     _controller.audioDefaultProfile = snapshot.audioDefaultProfile;
     _controller.videoEncodingConfigs
       ..clear()
@@ -234,7 +230,9 @@ class _ExportConfig {
               .first;
     final _EncoderSelection encoder = _controller._taskPlanner.resolveEncoder(
       namingVideoStream.codec,
-      preferredCodecFamily: profile == ExportProfile.muxMkv ? 'hevc' : null,
+      preferredCodecFamily: _controller._taskPlanner.codecFamilyForProfile(
+        profile,
+      ),
     );
     final String videoTag = _buildVideoNamingTag(encoder.encoder);
     final String bindingTag = _buildBindingSuffix(bindingKeys);

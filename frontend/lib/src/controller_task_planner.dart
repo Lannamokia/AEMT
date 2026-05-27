@@ -369,7 +369,10 @@ class _TaskPlanner {
     if (enabledVideo.isEmpty) {
       throw Exception('至少需要启用一条视频流。');
     }
-    final _EncoderSelection encoder = resolveEncoder(enabledVideo.first.codec);
+    final _EncoderSelection encoder = resolveEncoder(
+      enabledVideo.first.codec,
+      preferredCodecFamily: codecFamilyForProfile(ExportProfile.hardsubMp4),
+    );
     final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
     final toneMapping = _buildToneMappingFilter(
       enabledVideo.first.videoInfo ??
@@ -509,7 +512,7 @@ class _TaskPlanner {
     }
     final _EncoderSelection encoder = resolveEncoder(
       enabledVideo.first.codec,
-      preferredCodecFamily: 'hevc',
+      preferredCodecFamily: codecFamilyForProfile(ExportProfile.muxMkv),
     );
     final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
     final toneMapping = _buildToneMappingFilter(
@@ -1112,9 +1115,6 @@ class _TaskPlanner {
     _EncoderSelection selection,
     VideoEncodingConfig config,
   ) {
-    if (!config.userOverridden) {
-      return _buildVideoCodecArguments(selection);
-    }
     final List<String> supported =
         kSupportedRcModes[selection.encoder] ?? const <String>[];
     if (!supported.contains(config.mode)) {
@@ -1123,11 +1123,19 @@ class _TaskPlanner {
     switch (config.mode) {
       case 'CRF':
         _validateVideoRange('crf', config.crf);
-        return <String>[
-          '-crf',
-          config.crf.toString(),
-          ..._buildEncoderTuningArguments(selection),
-        ];
+        final List<String> args = <String>['-crf', config.crf.toString()];
+        final String maxrate = config.maxrate.trim();
+        final String bufsize = config.bufsize.trim();
+        if (maxrate.isNotEmpty) {
+          _validateVideoBitrate(maxrate);
+          args.addAll(<String>['-maxrate', maxrate]);
+        }
+        if (bufsize.isNotEmpty) {
+          _validateVideoBitrate(bufsize);
+          args.addAll(<String>['-bufsize', bufsize]);
+        }
+        args.addAll(_buildEncoderTuningArguments(selection));
+        return args;
       case 'CBR':
         _validateVideoBitrate(config.bitrate);
         final String maxrate = config.maxrate.trim().isEmpty
@@ -1291,21 +1299,6 @@ class _TaskPlanner {
       throw Exception('视频码率格式非法');
     }
     return '${int.parse(match.group(1)!) * 2}${match.group(2)!}';
-  }
-
-  List<String> _buildVideoCodecArguments(_EncoderSelection selection) {
-    final List<String> args = <String>[
-      '-b:v',
-      selection.codecFamily == 'hevc'
-          ? _controller.hevcBitrate
-          : _controller.avcBitrate,
-      '-maxrate',
-      selection.codecFamily == 'hevc'
-          ? _controller.hevcMaxrate
-          : _controller.avcMaxrate,
-    ];
-    args.addAll(_buildEncoderTuningArguments(selection));
-    return args;
   }
 
   List<String> _buildPixelFormatArguments(_EncoderSelection selection) {
@@ -1638,5 +1631,13 @@ class _TaskPlanner {
       encoder: codecFamily == 'hevc' ? 'libx265' : 'libx264',
       codecFamily: codecFamily,
     );
+  }
+
+  String codecFamilyForProfile(ExportProfile profile) {
+    final OutputVideoCodec codec = switch (profile) {
+      ExportProfile.hardsubMp4 => _controller.hardsubVideoCodec,
+      ExportProfile.muxMkv => _controller.muxVideoCodec,
+    };
+    return codec == OutputVideoCodec.h265 ? 'hevc' : 'avc';
   }
 }

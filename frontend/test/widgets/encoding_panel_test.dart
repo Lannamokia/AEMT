@@ -104,6 +104,10 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     expect(controller.outputResolution, '1280x720');
+    expect(find.text('AVC 目标码率'), findsNothing);
+    expect(find.text('AVC 最大码率'), findsNothing);
+    expect(find.text('HEVC 目标码率'), findsNothing);
+    expect(find.text('HEVC 最大码率'), findsNothing);
     controller.dispose();
   });
 
@@ -171,6 +175,14 @@ void main() {
       find.byKey(const ValueKey<String>('video-rc-mode-h264_nvenc')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('hardsub-video-codec')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('mux-video-codec')),
+      findsOneWidget,
+    );
     expect(find.text('minrate'), findsWidgets);
 
     await tester.enterText(
@@ -207,6 +219,51 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     expect(controller.videoEncodingConfigs['h264_nvenc']?.bitrate, '5000k');
+    controller.dispose();
+  });
+
+  testWidgets('CRF mode exposes maxrate and bufsize fields', (
+    WidgetTester tester,
+  ) async {
+    final AemtController controller = _controller();
+    final MediaInfo media = _mediaInfo();
+    controller.setVideoEncodingMode('libx264', 'CRF');
+    controller.setVideoEncodingField('libx264', crf: 22);
+
+    await _pumpPanel(tester, controller, media);
+    await _tapTab(tester, '高级编码参数');
+    final Finder maxrate = find
+        .byKey(const ValueKey<String>('video-maxrate'))
+        .first;
+
+    await tester.enterText(maxrate, '4200k');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(controller.videoEncodingConfigs['libx264']?.maxrate, '4200k');
+    expect(find.byKey(const ValueKey<String>('video-bufsize')), findsWidgets);
+    controller.dispose();
+  });
+
+  testWidgets('Output codec dropdowns update controller state', (
+    WidgetTester tester,
+  ) async {
+    final AemtController controller = _controller();
+    final MediaInfo media = _mediaInfo();
+
+    await _pumpPanel(tester, controller, media);
+    await _tapTab(tester, '高级编码参数');
+    await tester.tap(find.byKey(const ValueKey<String>('hardsub-video-codec')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('H265 / HEVC').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('mux-video-codec')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('H264 / AVC').last);
+    await tester.pumpAndSettle();
+
+    expect(controller.hardsubVideoCodec, OutputVideoCodec.h265);
+    expect(controller.muxVideoCodec, OutputVideoCodec.h264);
     controller.dispose();
   });
 

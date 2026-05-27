@@ -122,10 +122,8 @@ class AemtController extends ChangeNotifier {
   String episodicNamingTemplate = defaultEpisodicNamingTemplate;
   String outputResolution = '';
   String outputFps = '';
-  String avcBitrate = '2500k';
-  String avcMaxrate = '3750k';
-  String hevcBitrate = '2000k';
-  String hevcMaxrate = '3000k';
+  OutputVideoCodec hardsubVideoCodec = OutputVideoCodec.h264;
+  OutputVideoCodec muxVideoCodec = OutputVideoCodec.h265;
   String previewSubtitleKey = 'off';
   bool streamExtractionRunning = false;
   String? streamExtractionMessage;
@@ -564,23 +562,13 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setAvcBitrate(String value) {
-    avcBitrate = value;
+  void setHardsubVideoCodec(OutputVideoCodec value) {
+    hardsubVideoCodec = value;
     notifyListeners();
   }
 
-  void setAvcMaxrate(String value) {
-    avcMaxrate = value;
-    notifyListeners();
-  }
-
-  void setHevcBitrate(String value) {
-    hevcBitrate = value;
-    notifyListeners();
-  }
-
-  void setHevcMaxrate(String value) {
-    hevcMaxrate = value;
+  void setMuxVideoCodec(OutputVideoCodec value) {
+    muxVideoCodec = value;
     notifyListeners();
   }
 

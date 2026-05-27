@@ -43,7 +43,15 @@ void main() {
           containsAllInOrder(<String>['-crf', config.crf.toString()]),
         );
         expect(args, isNot(contains('-b:v')));
-        expect(args, isNot(contains('-maxrate')));
+        expect(
+          args,
+          containsAllInOrder(<String>[
+            '-maxrate',
+            config.maxrate,
+            '-bufsize',
+            config.bufsize,
+          ]),
+        );
       } else if (mode == 'CBR') {
         expect(
           args,
@@ -79,10 +87,8 @@ void main() {
     controller.dispose();
   });
 
-  test('unmodified video config preserves legacy codec arguments', () {
+  test('default video config uses advanced encoder settings', () {
     final AemtController controller = AemtController(initializePlayer: false);
-    controller.setAvcBitrate('2500k');
-    controller.setAvcMaxrate('3750k');
 
     final List<String> args = controller.debugBuildVideoRateControlArguments(
       'libx264',
@@ -93,15 +99,17 @@ void main() {
     expect(
       args,
       containsAllInOrder(<String>[
-        '-b:v',
-        '2500k',
+        '-crf',
+        '23',
         '-maxrate',
         '3750k',
+        '-bufsize',
+        '7500k',
         '-preset',
         'slow',
       ]),
     );
-    expect(args, isNot(contains('-crf')));
+    expect(args, isNot(contains('-b:v')));
 
     controller.dispose();
   });

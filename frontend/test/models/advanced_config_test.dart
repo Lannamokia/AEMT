@@ -167,10 +167,8 @@ void main() {
         outputResolution: '1920x1080',
         outputFps: '23.976',
         outputDirectory: 'C:/out',
-        avcBitrate: '${2 + random.nextInt(6)}000k',
-        avcMaxrate: '${3 + random.nextInt(8)}000k',
-        hevcBitrate: '${1 + random.nextInt(5)}000k',
-        hevcMaxrate: '${2 + random.nextInt(7)}000k',
+        hardsubVideoCodec: _pick(random, OutputVideoCodec.values),
+        muxVideoCodec: _pick(random, OutputVideoCodec.values),
         encoderTunings: <String, EncoderTuningSelection>{
           encoder: const EncoderTuningSelection(preset: 'slow', tune: '默认'),
         },
@@ -203,6 +201,8 @@ void main() {
       expect(decoded.compressionMode, snapshot.compressionMode);
       expect(decoded.hardwareMode, snapshot.hardwareMode);
       expect(decoded.outputFileNameOverride, snapshot.outputFileNameOverride);
+      expect(decoded.hardsubVideoCodec, snapshot.hardsubVideoCodec);
+      expect(decoded.muxVideoCodec, snapshot.muxVideoCodec);
       expect(decoded.encoderTunings.keys, snapshot.encoderTunings.keys);
       for (final String key in snapshot.encoderTunings.keys) {
         expect(
@@ -299,16 +299,37 @@ void main() {
     expect(
       () => EncodingSettingsSnapshot.fromJson(<String, dynamic>{
         'type': 'aemt.encoding-settings',
-        'version': 3,
+        'version': 4,
       }),
       throwsA(
         isA<FormatException>().having(
           (FormatException e) => e.message,
           'message',
-          '不支持的编码参数配置版本: 3',
+          '不支持的编码参数配置版本: 4',
         ),
       ),
     );
+  });
+
+  test('legacy global video bitrates migrate into encoder configs', () {
+    final EncodingSettingsSnapshot snapshot =
+        EncodingSettingsSnapshot.fromJson(<String, dynamic>{
+          'type': 'aemt.encoding-settings',
+          'version': 2,
+          'avcBitrate': '2600k',
+          'avcMaxrate': '3900k',
+          'hevcBitrate': '1800k',
+          'hevcMaxrate': '2800k',
+        });
+
+    expect(snapshot.hardsubVideoCodec, OutputVideoCodec.h264);
+    expect(snapshot.muxVideoCodec, OutputVideoCodec.h265);
+    expect(snapshot.videoEncodingConfigs['libx264']?.bitrate, '2600k');
+    expect(snapshot.videoEncodingConfigs['libx264']?.maxrate, '3900k');
+    expect(snapshot.videoEncodingConfigs['libx264']?.bufsize, '7800k');
+    expect(snapshot.videoEncodingConfigs['libx265']?.bitrate, '1800k');
+    expect(snapshot.videoEncodingConfigs['libx265']?.maxrate, '2800k');
+    expect(snapshot.videoEncodingConfigs['libx265']?.bufsize, '5600k');
   });
 }
 

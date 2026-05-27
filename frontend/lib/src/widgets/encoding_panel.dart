@@ -191,45 +191,6 @@ class EncodingPanel extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: buildField(
-                              'AVC 目标码率',
-                              controller.avcBitrate,
-                              controller.setAvcBitrate,
-                              key: 'avc-bitrate',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: buildField(
-                              'AVC 最大码率',
-                              controller.avcMaxrate,
-                              controller.setAvcMaxrate,
-                              key: 'avc-maxrate',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: buildField(
-                              'HEVC 目标码率',
-                              controller.hevcBitrate,
-                              controller.setHevcBitrate,
-                              key: 'hevc-bitrate',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: buildField(
-                              'HEVC 最大码率',
-                              controller.hevcMaxrate,
-                              controller.setHevcMaxrate,
-                              key: 'hevc-maxrate',
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
@@ -423,97 +384,164 @@ class _VideoAdvancedTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      padding: const EdgeInsets.only(top: 14),
-      childAspectRatio: 1.15,
-      children: controller.encoderTunings.values.map((EncoderTuning tuning) {
-        final VideoEncodingConfig cfg =
-            controller.videoEncodingConfigs[tuning.key] ??
-            VideoEncodingConfig.defaultsFor(tuning.key);
-        final List<String> modes =
-            kSupportedRcModes[tuning.key] ?? const <String>[];
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: softBox(),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  tuning.title,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: 14, bottom: 10),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: _OutputCodecDropdown(
+                  key: const ValueKey<String>('hardsub-video-codec'),
+                  label: '内嵌输出视频编码',
+                  value: controller.hardsubVideoCodec,
+                  onChanged: controller.setHardsubVideoCodec,
                 ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: tuning.preset,
-                  decoration: const InputDecoration(labelText: 'Preset'),
-                  items: tuning.presets
-                      .map(
-                        (String value) => DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (String? value) {
-                    if (value != null) {
-                      controller.updateEncoderPreset(tuning.key, value);
-                    }
-                  },
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _OutputCodecDropdown(
+                  key: const ValueKey<String>('mux-video-codec'),
+                  label: '内封输出视频编码',
+                  value: controller.muxVideoCodec,
+                  onChanged: controller.setMuxVideoCodec,
                 ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: tuning.tune,
-                  decoration: const InputDecoration(labelText: 'Tune'),
-                  items: tuning.tunes
-                      .map(
-                        (String value) => DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (String? value) {
-                    if (value != null) {
-                      controller.updateEncoderTune(tuning.key, value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  key: ValueKey<String>('video-rc-mode-${tuning.key}'),
-                  initialValue: modes.contains(cfg.mode)
-                      ? cfg.mode
-                      : VideoEncodingConfig.defaultsFor(tuning.key).mode,
-                  decoration: const InputDecoration(labelText: '视频码控模式'),
-                  items: modes
-                      .map(
-                        (String value) => DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (String? value) {
-                    if (value != null) {
-                      controller.setVideoEncodingMode(tuning.key, value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 10),
-                _VideoRateControlFields(
-                  controller: controller,
-                  encoderKey: tuning.key,
-                  config: cfg,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      }).toList(),
+        ),
+        Expanded(
+          child: GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.15,
+            children: controller.encoderTunings.values.map((
+              EncoderTuning tuning,
+            ) {
+              final VideoEncodingConfig cfg =
+                  controller.videoEncodingConfigs[tuning.key] ??
+                  VideoEncodingConfig.defaultsFor(tuning.key);
+              final List<String> modes =
+                  kSupportedRcModes[tuning.key] ?? const <String>[];
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: softBox(),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        tuning.title,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: tuning.preset,
+                        decoration: const InputDecoration(labelText: 'Preset'),
+                        items: tuning.presets
+                            .map(
+                              (String value) => DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            controller.updateEncoderPreset(tuning.key, value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: tuning.tune,
+                        decoration: const InputDecoration(labelText: 'Tune'),
+                        items: tuning.tunes
+                            .map(
+                              (String value) => DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            controller.updateEncoderTune(tuning.key, value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey<String>('video-rc-mode-${tuning.key}'),
+                        initialValue: modes.contains(cfg.mode)
+                            ? cfg.mode
+                            : VideoEncodingConfig.defaultsFor(tuning.key).mode,
+                        decoration: const InputDecoration(labelText: '视频码控模式'),
+                        items: modes
+                            .map(
+                              (String value) => DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            controller.setVideoEncodingMode(tuning.key, value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _VideoRateControlFields(
+                        controller: controller,
+                        encoderKey: tuning.key,
+                        config: cfg,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OutputCodecDropdown extends StatelessWidget {
+  const _OutputCodecDropdown({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final OutputVideoCodec value;
+  final ValueChanged<OutputVideoCodec> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<OutputVideoCodec>(
+      initialValue: value,
+      decoration: InputDecoration(labelText: label),
+      items: const <DropdownMenuItem<OutputVideoCodec>>[
+        DropdownMenuItem<OutputVideoCodec>(
+          value: OutputVideoCodec.h264,
+          child: Text('H264 / AVC'),
+        ),
+        DropdownMenuItem<OutputVideoCodec>(
+          value: OutputVideoCodec.h265,
+          child: Text('H265 / HEVC'),
+        ),
+      ],
+      onChanged: (OutputVideoCodec? value) {
+        if (value != null) {
+          onChanged(value);
+        }
+      },
     );
   }
 }
@@ -533,13 +561,31 @@ class _VideoRateControlFields extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (config.mode) {
       case 'CRF':
-        return _NumberField(
-          label: 'CRF',
-          value: config.crf.toString(),
-          onSubmitted: (String value) => controller.setVideoEncodingField(
-            encoderKey,
-            crf: int.tryParse(value) ?? config.crf,
-          ),
+        return Column(
+          children: <Widget>[
+            _NumberField(
+              label: 'CRF',
+              value: config.crf.toString(),
+              onSubmitted: (String value) => controller.setVideoEncodingField(
+                encoderKey,
+                crf: int.tryParse(value) ?? config.crf,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _VideoBitrateField(
+              label: 'maxrate',
+              value: config.maxrate,
+              onSubmitted: (String value) =>
+                  controller.setVideoEncodingField(encoderKey, maxrate: value),
+            ),
+            const SizedBox(height: 8),
+            _VideoBitrateField(
+              label: 'bufsize',
+              value: config.bufsize,
+              onSubmitted: (String value) =>
+                  controller.setVideoEncodingField(encoderKey, bufsize: value),
+            ),
+          ],
         );
       case 'CBR':
         return Column(
