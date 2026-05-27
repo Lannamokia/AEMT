@@ -192,17 +192,19 @@ class SyncedTextField extends StatefulWidget {
 
 class _SyncedTextFieldState extends State<SyncedTextField> {
   late final TextEditingController _textController;
+  late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _textController = TextEditingController(text: widget.value);
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
   }
 
   @override
   void didUpdateWidget(covariant SyncedTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_textController.text == widget.value) {
+    if (_focusNode.hasFocus || _textController.text == widget.value) {
       return;
     }
     _textController.value = TextEditingValue(
@@ -213,21 +215,38 @@ class _SyncedTextFieldState extends State<SyncedTextField> {
 
   @override
   void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     _textController.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _commit();
+    }
+  }
+
+  void _commit() {
+    final String value = _textController.text;
+    if (value != widget.value) {
+      widget.onChanged(value);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: _textController,
+      focusNode: _focusNode,
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hintText,
       ),
       enabled: widget.enabled,
       maxLines: widget.maxLines,
-      onChanged: widget.onChanged,
+      onFieldSubmitted: (_) => _commit(),
     );
   }
 }
@@ -253,14 +272,14 @@ class _EpisodicNamingTemplateEditorState
     _textController = TextEditingController(
       text: widget.controller.episodicNamingTemplate,
     );
-    _focusNode = FocusNode();
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
   }
 
   @override
   void didUpdateWidget(covariant EpisodicNamingTemplateEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     final String nextValue = widget.controller.episodicNamingTemplate;
-    if (_textController.text == nextValue) {
+    if (_focusNode.hasFocus || _textController.text == nextValue) {
       return;
     }
     final int offset = _textController.selection.baseOffset.clamp(
@@ -275,9 +294,23 @@ class _EpisodicNamingTemplateEditorState
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChanged);
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _commit();
+    }
+  }
+
+  void _commit() {
+    final String value = _textController.text;
+    if (value != widget.controller.episodicNamingTemplate) {
+      widget.controller.setEpisodicNamingTemplate(value);
+    }
   }
 
   void _insertVariable(String variableName) {
@@ -309,7 +342,7 @@ class _EpisodicNamingTemplateEditorState
             hintText: AemtController.defaultEpisodicNamingTemplate,
           ),
           maxLines: 2,
-          onChanged: widget.controller.setEpisodicNamingTemplate,
+          onFieldSubmitted: (_) => _commit(),
         ),
         const SizedBox(height: 10),
         Container(

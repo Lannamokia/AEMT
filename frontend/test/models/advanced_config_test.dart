@@ -195,6 +195,7 @@ void main() {
           desat: random.nextDouble() * 2,
         ),
         continueOnMissingFont: random.nextBool(),
+        fontSubsettingEnabled: random.nextBool(),
         sourceHanEllipsisFix: random.nextBool(),
       );
       final EncodingSettingsSnapshot decoded =
@@ -218,6 +219,7 @@ void main() {
       expect(decoded.videoEncodingConfigs, snapshot.videoEncodingConfigs);
       expect(decoded.toneMappingConfig, snapshot.toneMappingConfig);
       expect(decoded.continueOnMissingFont, snapshot.continueOnMissingFont);
+      expect(decoded.fontSubsettingEnabled, snapshot.fontSubsettingEnabled);
       expect(decoded.sourceHanEllipsisFix, snapshot.sourceHanEllipsisFix);
     }
   });

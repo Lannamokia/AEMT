@@ -236,6 +236,16 @@ class _TaskPlanner {
       for (final String fontName in matchResult.missing)
         'WARN: 字体 $fontName 缺失',
     ];
+    if (!_controller.fontSubsettingEnabled) {
+      return (
+        fonts: matchResult.matched.values.toList(),
+        renameMap: <String, String>{},
+        warnings: warnings,
+        assSubtitlePaths: assSubtitlePaths,
+        rewrittenAssPaths: <String, String>{},
+        subsetSteps: <CommandStep>[],
+      );
+    }
     final RuntimeDiagnostics diagnostics = _controller.diagnostics;
     final String? pyftsubsetPath = diagnostics.pyftsubset.path;
     final String? ttxPath = diagnostics.ttx.path;

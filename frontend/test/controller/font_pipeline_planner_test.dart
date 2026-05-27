@@ -102,6 +102,47 @@ void main() {
     controller.dispose();
   });
 
+  test('font subsetting toggle uses full fonts without ASS rewrite', () async {
+    final Directory workDir = await Directory.systemTemp.createTemp(
+      'aemt_subset_disabled_',
+    );
+    final String assPath = p.join(workDir.path, 'styled.ass');
+    await File(assPath).writeAsString(_assText('Example Font'));
+    final AemtController controller = _controllerForPlan(assPath)
+      ..setFontSubsettingEnabled(false);
+    controller.debugFontResolver =
+        (List<String> importedFontSources, String workDir) async =>
+            const <ResolvedFontFile>[_exampleFont];
+    controller.debugAttachmentExtractor =
+        (MediaInfo info, String workDir) async => const <ResolvedFontFile>[];
+
+    final TaskPlan hardsub = await controller.debugBuildTaskPlan(_task());
+
+    expect(
+      hardsub.steps.where((CommandStep step) => step.fontSubsetStep != null),
+      isEmpty,
+    );
+    expect(hardsub.commandPreview, contains("fontsdir='C/:/fonts'"));
+    expect(hardsub.commandPreview, contains('styled.ass'));
+    expect(hardsub.commandPreview, isNot(contains('<workDir>/subsetted')));
+    expect(hardsub.commandPreview, isNot(contains('<workDir>/subtitles')));
+
+    controller.diagnostics = _diagnostics(
+      hasMkvpropedit: true,
+      hasFontTools: true,
+    );
+    final TaskPlan mux = await controller.debugBuildTaskPlan(
+      _task(profile: ExportProfile.muxMkv),
+    );
+
+    expect(mux.commandPreview, contains('-attach C:/fonts/Example.ttf'));
+    expect(mux.commandPreview, contains('filename=Example.ttf'));
+    expect(mux.commandPreview, isNot(contains('Example.subset.ttf')));
+    expect(mux.commandPreview, contains('-i'));
+    expect(mux.commandPreview, contains('styled.ass'));
+    controller.dispose();
+  });
+
   test('Property 19: Diagnostic comment-line preview', () async {
     final Directory workDir = await Directory.systemTemp.createTemp(
       'aemt_diagnostics_',

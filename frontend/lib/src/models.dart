@@ -938,6 +938,7 @@ class EncodingSettingsSnapshot {
     this.videoEncodingConfigs = const <String, VideoEncodingConfig>{},
     this.toneMappingConfig = const ToneMappingConfig.defaultBt709(),
     this.continueOnMissingFont = false,
+    this.fontSubsettingEnabled = true,
     this.sourceHanEllipsisFix = true,
     this.importStatusMessage,
   });
@@ -964,6 +965,7 @@ class EncodingSettingsSnapshot {
   final Map<String, VideoEncodingConfig> videoEncodingConfigs;
   final ToneMappingConfig toneMappingConfig;
   final bool continueOnMissingFont;
+  final bool fontSubsettingEnabled;
   final bool sourceHanEllipsisFix;
   final String? importStatusMessage;
 
@@ -1001,6 +1003,7 @@ class EncodingSettingsSnapshot {
       ),
       'toneMappingConfig': toneMappingConfig.toJson(),
       'continueOnMissingFont': continueOnMissingFont,
+      'fontSubsettingEnabled': fontSubsettingEnabled,
       'sourceHanEllipsisFix': sourceHanEllipsisFix,
     };
   }
@@ -1107,6 +1110,7 @@ class EncodingSettingsSnapshot {
           ? const ToneMappingConfig.defaultBt709()
           : ToneMappingConfig.fromJson(toneMappingJson),
       continueOnMissingFont: _readBool(json, 'continueOnMissingFont', false),
+      fontSubsettingEnabled: _readBool(json, 'fontSubsettingEnabled', true),
       sourceHanEllipsisFix: _readBool(json, 'sourceHanEllipsisFix', true),
       importStatusMessage: version == 1
           ? '已导入旧版本预设，音频高级参数、视频码控与色调映射沿用默认'

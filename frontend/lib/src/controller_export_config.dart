@@ -68,6 +68,7 @@ class _ExportConfig {
       ),
       toneMappingConfig: _controller.toneMappingConfig,
       continueOnMissingFont: _controller.continueOnMissingFont,
+      fontSubsettingEnabled: _controller.fontSubsettingEnabled,
       sourceHanEllipsisFix: _controller.sourceHanEllipsisFix,
       encoderTunings: _controller.encoderTunings.map(
         (String key, EncoderTuning tuning) => MapEntry(
@@ -112,6 +113,7 @@ class _ExportConfig {
     _applyAudioStreamConfigs(snapshot);
     _controller.toneMappingConfig = snapshot.toneMappingConfig;
     _controller.continueOnMissingFont = snapshot.continueOnMissingFont;
+    _controller.fontSubsettingEnabled = snapshot.fontSubsettingEnabled;
     _controller.sourceHanEllipsisFix = snapshot.sourceHanEllipsisFix;
     snapshot.encoderTunings.forEach((String key, EncoderTuningSelection value) {
       final EncoderTuning? tuning = _controller.encoderTunings[key];

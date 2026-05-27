@@ -88,6 +88,25 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('Basic_Settings_Tab commits text fields on blur', (
+    WidgetTester tester,
+  ) async {
+    final AemtController controller = _controller();
+    final MediaInfo media = _mediaInfo();
+
+    await _pumpPanel(tester, controller, media);
+    final Finder field = find.widgetWithText(TextFormField, '输出分辨率').first;
+
+    await tester.enterText(field, '1280x720');
+    await tester.pump();
+    expect(controller.outputResolution, isEmpty);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(controller.outputResolution, '1280x720');
+    controller.dispose();
+  });
+
   testWidgets('Audio_Settings_Tab switches encoder-specific fields', (
     WidgetTester tester,
   ) async {
@@ -153,7 +172,41 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('minrate'), findsWidgets);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('video-bitrate')).first,
+      'bad',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
     expect(find.text('码率格式应为如 8000k 或 5M'), findsWidgets);
+    controller.dispose();
+  });
+
+  testWidgets('Video rate-control text fields commit on blur', (
+    WidgetTester tester,
+  ) async {
+    final AemtController controller = _controller();
+    final MediaInfo media = _mediaInfo();
+    controller.setVideoEncodingMode('h264_nvenc', 'VBR');
+    controller.setVideoEncodingField('h264_nvenc', bitrate: '3000k');
+
+    await _pumpPanel(tester, controller, media);
+    await _tapTab(tester, '高级编码参数');
+    await tester.drag(find.byType(GridView), const Offset(0, -700));
+    await tester.pumpAndSettle();
+    final Finder field = find
+        .byKey(const ValueKey<String>('video-bitrate'))
+        .first;
+
+    await tester.enterText(field, '5000k');
+    await tester.pump();
+    expect(controller.videoEncodingConfigs['h264_nvenc']?.bitrate, '3000k');
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(controller.videoEncodingConfigs['h264_nvenc']?.bitrate, '5000k');
     controller.dispose();
   });
 
@@ -167,9 +220,12 @@ void main() {
     await _tapTab(tester, '字体处理');
 
     expect(controller.continueOnMissingFont, isFalse);
+    expect(controller.fontSubsettingEnabled, isTrue);
     expect(controller.sourceHanEllipsisFix, isTrue);
 
     await tester.tap(find.text('缺失字体时仍继续导出'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('启用字体子集化'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('思源黑/宋字体省略号居中对齐'));
     await tester.pumpAndSettle();
@@ -177,6 +233,7 @@ void main() {
     final EncodingSettingsSnapshot snapshot = controller
         .debugBuildEncodingSettingsSnapshot();
     expect(snapshot.continueOnMissingFont, isTrue);
+    expect(snapshot.fontSubsettingEnabled, isFalse);
     expect(snapshot.sourceHanEllipsisFix, isFalse);
     controller.dispose();
   });
@@ -265,11 +322,42 @@ void main() {
     expect(
       tester
           .widget<TextFormField>(
-            find.byKey(const ValueKey<String>('number-peak-auto')).first,
+            find.byKey(const ValueKey<String>('number-peak')).first,
           )
           .enabled,
       isFalse,
     );
+    controller.dispose();
+  });
+
+  testWidgets('Tone_Mapping_Tab number fields commit on blur', (
+    WidgetTester tester,
+  ) async {
+    final AemtController controller = _controller(hasZscale: true);
+    final MediaInfo media = _mediaInfo(
+      primaryVideo: const VideoStreamInfo(
+        colorPrimaries: 'bt2020',
+        colorTransfer: 'smpte2084',
+        colorSpace: 'bt2020nc',
+        bitsPerRawSample: 10,
+      ),
+    );
+
+    await _pumpPanel(tester, controller, media);
+    await _tapTab(tester, '色调映射');
+    await tester.tap(find.text('我自己来'));
+    await tester.pumpAndSettle();
+    final Finder field = find
+        .byKey(const ValueKey<String>('number-peak'))
+        .first;
+
+    await tester.enterText(field, '400');
+    await tester.pump();
+    expect(controller.toneMappingConfig.peak, 'auto');
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(controller.toneMappingConfig.peak, '400');
     controller.dispose();
   });
 }

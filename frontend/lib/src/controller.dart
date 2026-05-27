@@ -143,6 +143,7 @@ class AemtController extends ChangeNotifier {
       <String, VideoEncodingConfig>{};
   ToneMappingConfig toneMappingConfig = const ToneMappingConfig.defaultBt709();
   bool continueOnMissingFont = false;
+  bool fontSubsettingEnabled = true;
   bool sourceHanEllipsisFix = true;
   bool _hdrToneMappingNoticeShown = false;
   final StreamController<void> _queueCancelSignal =
@@ -497,6 +498,11 @@ class AemtController extends ChangeNotifier {
 
   void setContinueOnMissingFont(bool value) {
     continueOnMissingFont = value;
+    notifyListeners();
+  }
+
+  void setFontSubsettingEnabled(bool value) {
+    fontSubsettingEnabled = value;
     notifyListeners();
   }
 

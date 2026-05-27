@@ -536,7 +536,7 @@ class _VideoRateControlFields extends StatelessWidget {
         return _NumberField(
           label: 'CRF',
           value: config.crf.toString(),
-          onChanged: (String value) => controller.setVideoEncodingField(
+          onSubmitted: (String value) => controller.setVideoEncodingField(
             encoderKey,
             crf: int.tryParse(value) ?? config.crf,
           ),
@@ -547,28 +547,28 @@ class _VideoRateControlFields extends StatelessWidget {
             _VideoBitrateField(
               label: 'bitrate',
               value: config.bitrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, bitrate: value),
             ),
             const SizedBox(height: 8),
             _VideoBitrateField(
               label: 'maxrate',
               value: config.maxrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, maxrate: value),
             ),
             const SizedBox(height: 8),
             _VideoBitrateField(
               label: 'minrate',
               value: config.minrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, minrate: value),
             ),
             const SizedBox(height: 8),
             _VideoBitrateField(
               label: 'bufsize',
               value: config.bufsize,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, bufsize: value),
             ),
           ],
@@ -579,28 +579,28 @@ class _VideoRateControlFields extends StatelessWidget {
             _VideoBitrateField(
               label: 'bitrate',
               value: config.bitrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, bitrate: value),
             ),
             const SizedBox(height: 8),
             _VideoBitrateField(
               label: 'maxrate',
               value: config.maxrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, maxrate: value),
             ),
             const SizedBox(height: 8),
             _VideoBitrateField(
               label: 'minrate',
               value: config.minrate,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, minrate: value),
             ),
             const SizedBox(height: 8),
             _VideoBitrateField(
               label: 'bufsize',
               value: config.bufsize,
-              onChanged: (String value) =>
+              onSubmitted: (String value) =>
                   controller.setVideoEncodingField(encoderKey, bufsize: value),
             ),
           ],
@@ -612,7 +612,7 @@ class _VideoRateControlFields extends StatelessWidget {
               child: _NumberField(
                 label: 'qpI',
                 value: config.qpI.toString(),
-                onChanged: (String value) => controller.setVideoEncodingField(
+                onSubmitted: (String value) => controller.setVideoEncodingField(
                   encoderKey,
                   qpI: int.tryParse(value) ?? config.qpI,
                 ),
@@ -623,7 +623,7 @@ class _VideoRateControlFields extends StatelessWidget {
               child: _NumberField(
                 label: 'qpP',
                 value: config.qpP.toString(),
-                onChanged: (String value) => controller.setVideoEncodingField(
+                onSubmitted: (String value) => controller.setVideoEncodingField(
                   encoderKey,
                   qpP: int.tryParse(value) ?? config.qpP,
                 ),
@@ -634,7 +634,7 @@ class _VideoRateControlFields extends StatelessWidget {
               child: _NumberField(
                 label: 'qpB',
                 value: config.qpB.toString(),
-                onChanged: (String value) => controller.setVideoEncodingField(
+                onSubmitted: (String value) => controller.setVideoEncodingField(
                   encoderKey,
                   qpB: int.tryParse(value) ?? config.qpB,
                 ),
@@ -648,30 +648,88 @@ class _VideoRateControlFields extends StatelessWidget {
   }
 }
 
-class _VideoBitrateField extends StatelessWidget {
+class _VideoBitrateField extends StatefulWidget {
   const _VideoBitrateField({
     required this.label,
     required this.value,
-    required this.onChanged,
+    required this.onSubmitted,
   });
 
   final String label;
   final String value;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_VideoBitrateField> createState() => _VideoBitrateFieldState();
+}
+
+class _VideoBitrateFieldState extends State<_VideoBitrateField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  var _touched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoBitrateField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+      _touched = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _submit();
+    }
+  }
+
+  void _submit() {
+    _touched = true;
+    setState(() {});
+    final String value = _controller.text;
+    if (_isValid(value) && value != widget.value) {
+      widget.onSubmitted(value);
+    }
+  }
+
+  bool _isValid(String value) {
+    final String trimmed = value.trim();
+    return trimmed.isEmpty || RegExp(r'^\d+[kKmM]$').hasMatch(trimmed);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool invalid =
-        value.trim().isNotEmpty &&
-        !RegExp(r'^\d+[kKmM]$').hasMatch(value.trim());
+    final bool invalid = _touched && !_isValid(_controller.text);
     return TextFormField(
-      key: ValueKey<String>('video-$label-$value'),
-      initialValue: value,
+      key: ValueKey<String>('video-${widget.label}'),
+      controller: _controller,
+      focusNode: _focusNode,
       decoration: InputDecoration(
-        labelText: label,
+        labelText: widget.label,
         errorText: invalid ? '码率格式应为如 8000k 或 5M' : null,
       ),
-      onChanged: onChanged,
+      onChanged: (_) {
+        if (_touched) {
+          setState(() => _touched = false);
+        }
+      },
+      onFieldSubmitted: (_) => _submit(),
     );
   }
 }
@@ -907,7 +965,7 @@ class _AudioConfigEditor extends StatelessWidget {
               enabled: enabled,
               label: 'VBR 质量',
               value: config.vbrQuality.toString(),
-              onChanged: (String value) => onChanged(
+              onSubmitted: (String value) => onChanged(
                 config.copyWith(
                   vbrQuality: int.tryParse(value) ?? config.vbrQuality,
                 ),
@@ -993,7 +1051,7 @@ class _AudioConfigEditor extends StatelessWidget {
               enabled: enabled,
               label: 'compression_level',
               value: config.compressionLevel.toString(),
-              onChanged: (String value) => onChanged(
+              onSubmitted: (String value) => onChanged(
                 config.copyWith(
                   compressionLevel:
                       int.tryParse(value) ?? config.compressionLevel,
@@ -1020,7 +1078,7 @@ class _AudioConfigEditor extends StatelessWidget {
                     enabled: enabled,
                     label: 'I',
                     value: config.loudnormI.toString(),
-                    onChanged: (String value) => onChanged(
+                    onSubmitted: (String value) => onChanged(
                       config.copyWith(
                         loudnormI: double.tryParse(value) ?? config.loudnormI,
                       ),
@@ -1033,7 +1091,7 @@ class _AudioConfigEditor extends StatelessWidget {
                     enabled: enabled,
                     label: 'TP',
                     value: config.loudnormTp.toString(),
-                    onChanged: (String value) => onChanged(
+                    onSubmitted: (String value) => onChanged(
                       config.copyWith(
                         loudnormTp: double.tryParse(value) ?? config.loudnormTp,
                       ),
@@ -1046,7 +1104,7 @@ class _AudioConfigEditor extends StatelessWidget {
                     enabled: enabled,
                     label: 'LRA',
                     value: config.loudnormLra.toString(),
-                    onChanged: (String value) => onChanged(
+                    onSubmitted: (String value) => onChanged(
                       config.copyWith(
                         loudnormLra:
                             double.tryParse(value) ?? config.loudnormLra,
@@ -1073,7 +1131,7 @@ class _AudioConfigEditor extends StatelessWidget {
                         enabled: enabled,
                         label: 'threshold',
                         value: config.drcThreshold.toString(),
-                        onChanged: (String value) => onChanged(
+                        onSubmitted: (String value) => onChanged(
                           config.copyWith(
                             drcThreshold:
                                 double.tryParse(value) ?? config.drcThreshold,
@@ -1087,7 +1145,7 @@ class _AudioConfigEditor extends StatelessWidget {
                         enabled: enabled,
                         label: 'ratio',
                         value: config.drcRatio.toString(),
-                        onChanged: (String value) => onChanged(
+                        onSubmitted: (String value) => onChanged(
                           config.copyWith(
                             drcRatio: double.tryParse(value) ?? config.drcRatio,
                           ),
@@ -1104,7 +1162,7 @@ class _AudioConfigEditor extends StatelessWidget {
                         enabled: enabled,
                         label: 'attack',
                         value: config.drcAttack.toString(),
-                        onChanged: (String value) => onChanged(
+                        onSubmitted: (String value) => onChanged(
                           config.copyWith(
                             drcAttack:
                                 double.tryParse(value) ?? config.drcAttack,
@@ -1118,7 +1176,7 @@ class _AudioConfigEditor extends StatelessWidget {
                         enabled: enabled,
                         label: 'release',
                         value: config.drcRelease.toString(),
-                        onChanged: (String value) => onChanged(
+                        onSubmitted: (String value) => onChanged(
                           config.copyWith(
                             drcRelease:
                                 double.tryParse(value) ?? config.drcRelease,
@@ -1291,6 +1349,14 @@ class _FontSettingsTab extends StatelessWidget {
             subtitle: const Text('默认关闭。开启后字幕字体匹配失败时不再终止任务，但成品可能出现字体替换。'),
             value: controller.continueOnMissingFont,
             onChanged: controller.setContinueOnMissingFont,
+          ),
+          SwitchListTile(
+            title: const Text('启用字体子集化'),
+            subtitle: const Text(
+              '关闭后不改写 ASS 字体名，也不运行 pyftsubset/ttx；内封会附加完整匹配字体，烧录会用完整字体目录。',
+            ),
+            value: controller.fontSubsettingEnabled,
+            onChanged: controller.setFontSubsettingEnabled,
           ),
           SwitchListTile(
             title: const Text('思源黑/宋字体省略号居中对齐'),
@@ -1549,7 +1615,7 @@ class _ToneMappingTabState extends State<_ToneMappingTab> {
                                   ((double.tryParse(cfg.peak) ?? 0) <= 0)
                               ? '色调映射参数非法: peak'
                               : null,
-                          onChanged: (String value) => controller
+                          onSubmitted: (String value) => controller
                               .setToneMappingConfig(cfg.copyWith(peak: value)),
                         ),
                       ),
@@ -1562,7 +1628,7 @@ class _ToneMappingTabState extends State<_ToneMappingTab> {
                           errorText: cfg.desat < 0 || cfg.desat > 2
                               ? '色调映射参数非法: desat'
                               : null,
-                          onChanged: (String value) =>
+                          onSubmitted: (String value) =>
                               controller.setToneMappingConfig(
                                 cfg.copyWith(
                                   desat: double.tryParse(value) ?? cfg.desat,
@@ -1632,11 +1698,11 @@ class _DropdownField<T extends Object> extends StatelessWidget {
   }
 }
 
-class _NumberField extends StatelessWidget {
+class _NumberField extends StatefulWidget {
   const _NumberField({
     required this.label,
     required this.value,
-    required this.onChanged,
+    required this.onSubmitted,
     this.enabled = true,
     this.errorText,
   });
@@ -1645,16 +1711,65 @@ class _NumberField extends StatelessWidget {
   final String value;
   final bool enabled;
   final String? errorText;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_NumberField> createState() => _NumberFieldState();
+}
+
+class _NumberFieldState extends State<_NumberField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _NumberField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _submit();
+    }
+  }
+
+  void _submit() {
+    final String value = _controller.text;
+    if (value != widget.value) {
+      widget.onSubmitted(value);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
-      key: ValueKey<String>('number-$label-$value'),
-      initialValue: value,
-      enabled: enabled,
-      decoration: InputDecoration(labelText: label, errorText: errorText),
-      onChanged: onChanged,
+      key: ValueKey<String>('number-${widget.label}'),
+      controller: _controller,
+      focusNode: _focusNode,
+      enabled: widget.enabled,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        errorText: widget.errorText,
+      ),
+      onFieldSubmitted: (_) => _submit(),
     );
   }
 }
