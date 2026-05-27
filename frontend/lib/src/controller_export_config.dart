@@ -55,10 +55,19 @@ class _ExportConfig {
       outputResolution: _controller.outputResolution,
       outputFps: _controller.outputFps,
       outputDirectory: _controller.outputDirectory,
-      avcBitrate: _controller.avcBitrate,
-      avcMaxrate: _controller.avcMaxrate,
-      hevcBitrate: _controller.hevcBitrate,
-      hevcMaxrate: _controller.hevcMaxrate,
+      hardsubVideoCodec: _controller.hardsubVideoCodec,
+      muxVideoCodec: _controller.muxVideoCodec,
+      audioStreamConfigs: Map<String, AudioStreamConfig>.from(
+        _controller.audioStreamConfigs,
+      ),
+      audioDefaultProfile: _controller.audioDefaultProfile,
+      videoEncodingConfigs: Map<String, VideoEncodingConfig>.from(
+        _controller.videoEncodingConfigs,
+      ),
+      toneMappingConfig: _controller.toneMappingConfig,
+      continueOnMissingFont: _controller.continueOnMissingFont,
+      fontSubsettingEnabled: _controller.fontSubsettingEnabled,
+      sourceHanEllipsisFix: _controller.sourceHanEllipsisFix,
       encoderTunings: _controller.encoderTunings.map(
         (String key, EncoderTuning tuning) => MapEntry(
           key,
@@ -77,16 +86,31 @@ class _ExportConfig {
     _controller.seasonNumber = snapshot.seasonNumber;
     _controller.episodeNumber = snapshot.episodeNumber;
     _controller.sourceLabel = snapshot.sourceLabel;
-    _controller.episodicNamingTemplate = snapshot.episodicNamingTemplate.trim().isEmpty
+    _controller.episodicNamingTemplate =
+        snapshot.episodicNamingTemplate.trim().isEmpty
         ? AemtController.defaultEpisodicNamingTemplate
         : snapshot.episodicNamingTemplate;
     _controller.outputResolution = snapshot.outputResolution;
     _controller.outputFps = snapshot.outputFps;
     _controller.outputDirectory = snapshot.outputDirectory;
-    _controller.avcBitrate = snapshot.avcBitrate;
-    _controller.avcMaxrate = snapshot.avcMaxrate;
-    _controller.hevcBitrate = snapshot.hevcBitrate;
-    _controller.hevcMaxrate = snapshot.hevcMaxrate;
+    _controller.hardsubVideoCodec = snapshot.hardsubVideoCodec;
+    _controller.muxVideoCodec = snapshot.muxVideoCodec;
+    _controller.audioDefaultProfile = snapshot.audioDefaultProfile;
+    _controller.videoEncodingConfigs
+      ..clear()
+      ..addAll(snapshot.videoEncodingConfigs);
+    for (final String encoderKey in kSupportedRcModes.keys) {
+      _controller.videoEncodingConfigs.putIfAbsent(
+        encoderKey,
+        () => VideoEncodingConfig.defaultsFor(encoderKey),
+      );
+      _controller.reconcileVideoEncodingMode(encoderKey);
+    }
+    _applyAudioStreamConfigs(snapshot);
+    _controller.toneMappingConfig = snapshot.toneMappingConfig;
+    _controller.continueOnMissingFont = snapshot.continueOnMissingFont;
+    _controller.fontSubsettingEnabled = snapshot.fontSubsettingEnabled;
+    _controller.sourceHanEllipsisFix = snapshot.sourceHanEllipsisFix;
     snapshot.encoderTunings.forEach((String key, EncoderTuningSelection value) {
       final EncoderTuning? tuning = _controller.encoderTunings[key];
       if (tuning == null) {
@@ -99,9 +123,45 @@ class _ExportConfig {
     });
   }
 
+  void _applyAudioStreamConfigs(EncodingSettingsSnapshot snapshot) {
+    final MediaInfo? info = _controller.mediaInfo;
+    if (info == null) {
+      _controller.audioStreamConfigs
+        ..clear()
+        ..addAll(snapshot.audioStreamConfigs);
+      return;
+    }
+    _controller._syncAudioStreamConfigsWithMedia();
+    for (final MediaStreamEntry stream in info.streams.where(
+      (MediaStreamEntry stream) =>
+          stream.kind == StreamKind.audio &&
+          stream.origin == StreamOrigin.input,
+    )) {
+      final String currentKey = _controller._audioStreamConfigKey(
+        info.inputPath,
+        stream.index,
+      );
+      final AudioStreamConfig? exact = snapshot.audioStreamConfigs[currentKey];
+      if (exact != null) {
+        _controller.audioStreamConfigs[currentKey] = exact;
+        continue;
+      }
+      final String suffix = '#${stream.index}';
+      for (final MapEntry<String, AudioStreamConfig> entry
+          in snapshot.audioStreamConfigs.entries) {
+        if (entry.key.endsWith(suffix)) {
+          _controller.audioStreamConfigs[currentKey] = entry.value;
+          break;
+        }
+      }
+    }
+  }
+
   String get resolvedEpisodicNamingTemplate {
     final String template = _controller.episodicNamingTemplate.trim();
-    return template.isEmpty ? AemtController.defaultEpisodicNamingTemplate : template;
+    return template.isEmpty
+        ? AemtController.defaultEpisodicNamingTemplate
+        : template;
   }
 
   List<String> findUnknownTemplateVariables(String template) {
@@ -139,7 +199,9 @@ class _ExportConfig {
         };
     for (final String variable in variables) {
       final ({String label, String value})? input = requiredInputs[variable];
-      if (input != null && input.value.isEmpty && !missing.contains(input.label)) {
+      if (input != null &&
+          input.value.isEmpty &&
+          !missing.contains(input.label)) {
         missing.add(input.label);
       }
     }
@@ -162,11 +224,15 @@ class _ExportConfig {
     final MediaStreamEntry namingVideoStream = enabledVideos.isNotEmpty
         ? enabledVideos.first
         : info.streams
-              .where((MediaStreamEntry stream) => stream.kind == StreamKind.video)
+              .where(
+                (MediaStreamEntry stream) => stream.kind == StreamKind.video,
+              )
               .first;
     final _EncoderSelection encoder = _controller._taskPlanner.resolveEncoder(
       namingVideoStream.codec,
-      preferredCodecFamily: profile == ExportProfile.muxMkv ? 'hevc' : null,
+      preferredCodecFamily: _controller._taskPlanner.codecFamilyForProfile(
+        profile,
+      ),
     );
     final String videoTag = _buildVideoNamingTag(encoder.encoder);
     final String bindingTag = _buildBindingSuffix(bindingKeys);
@@ -296,7 +362,10 @@ class _ExportConfig {
   String _buildMuxSubtitleTag(MediaInfo info, List<String> bindingKeys) {
     final String audioLanguage = _buildPrimaryAudioLanguageTag(info);
     return bindingKeys
-        .map((String key) => '${_buildBindingSuffix(<String>[key])}_$audioLanguage')
+        .map(
+          (String key) =>
+              '${_buildBindingSuffix(<String>[key])}_$audioLanguage',
+        )
         .join('&');
   }
 

@@ -13,10 +13,17 @@ $frontend = Join-Path $repoRoot 'frontend'
 $distRoot = Join-Path $repoRoot 'dist'
 $portableRoot = Join-Path $distRoot 'AEMT-windows-portable'
 $portableBin = Join-Path $portableRoot 'bin'
+$portablePython = Join-Path $portableRoot 'python'
 $zipPath = Join-Path $distRoot 'AEMT-windows-portable.zip'
 $releaseRoot = Join-Path $frontend 'build\windows\x64\runner\Release'
 $repoBin = Join-Path $repoRoot 'bin'
 $repoFfmpeg = Join-Path $repoRoot 'ffmpeg'
+$toolsRoot = Join-Path $repoRoot 'tools'
+$cacheRoot = Join-Path $toolsRoot 'cache'
+$pythonEmbedVersion = '3.13.9'
+$pythonEmbedUrl = "https://www.python.org/ftp/python/$pythonEmbedVersion/python-$pythonEmbedVersion-embed-amd64.zip"
+$getPipUrl = 'https://bootstrap.pypa.io/get-pip.py'
+$fontToolsVersion = '4.63.0'
 
 function Resolve-ExecutablePath {
   param(
@@ -85,6 +92,110 @@ function Copy-MatchingFiles {
   }
 }
 
+function Invoke-DownloadFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Uri,
+    [Parameter(Mandatory = $true)][string]$Destination
+  )
+
+  if (Test-Path $Destination) {
+    return
+  }
+
+  New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
+  Write-Host "Downloading $Uri"
+  Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing
+}
+
+function Enable-EmbeddedPythonSite {
+  param(
+    [Parameter(Mandatory = $true)][string]$PythonDirectory
+  )
+
+  $pthFile = Get-ChildItem -Path $PythonDirectory -Filter 'python*._pth' -File |
+    Select-Object -First 1
+  if (-not $pthFile) {
+    throw "Embedded Python ._pth file not found in $PythonDirectory"
+  }
+
+  $lines = Get-Content -Path $pthFile.FullName
+  $updated = $lines |
+    ForEach-Object {
+      if ($_ -eq '#import site') {
+        'import site'
+      }
+      else {
+        $_
+      }
+    }
+  if ($updated -notcontains 'Lib\site-packages') {
+    $updated += 'Lib\site-packages'
+  }
+  if ($updated -notcontains 'Scripts') {
+    $updated += 'Scripts'
+  }
+
+  Set-Content -Path $pthFile.FullName -Value $updated -Encoding ASCII
+}
+
+function Install-FontToolsRuntime {
+  param(
+    [Parameter(Mandatory = $true)][string]$Destination,
+    [Parameter(Mandatory = $true)][string]$BinDirectory,
+    [Parameter(Mandatory = $true)][string]$DartPath
+  )
+
+  $pythonZip = Join-Path $cacheRoot "python-$pythonEmbedVersion-embed-amd64.zip"
+  $getPip = Join-Path $cacheRoot 'get-pip.py'
+
+  Invoke-DownloadFile -Uri $pythonEmbedUrl -Destination $pythonZip
+  Invoke-DownloadFile -Uri $getPipUrl -Destination $getPip
+
+  New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+  Expand-Archive -Path $pythonZip -DestinationPath $Destination -Force
+  Enable-EmbeddedPythonSite -PythonDirectory $Destination
+
+  $python = Join-Path $Destination 'python.exe'
+  if (-not (Test-Path $python)) {
+    throw "Embedded Python executable not found: $python"
+  }
+
+  & $python $getPip --no-warn-script-location --disable-pip-version-check
+  if ($LASTEXITCODE -ne 0) {
+    throw "get-pip failed with exit code $LASTEXITCODE"
+  }
+
+  & $python -m pip install `
+    --disable-pip-version-check `
+    --no-warn-script-location `
+    --no-cache-dir `
+    --upgrade `
+    "fonttools[woff]==$fontToolsVersion"
+  if ($LASTEXITCODE -ne 0) {
+    throw "FontTools install failed with exit code $LASTEXITCODE"
+  }
+
+  $fontToolsLauncherSource = Join-Path $toolsRoot 'fonttools_launcher.dart'
+  $fontToolsLauncherTemp = Join-Path $cacheRoot 'fonttools_launcher.exe'
+  & $DartPath compile exe $fontToolsLauncherSource -o $fontToolsLauncherTemp
+  if ($LASTEXITCODE -ne 0) {
+    throw "FontTools launcher compile failed with exit code $LASTEXITCODE"
+  }
+  Copy-Item $fontToolsLauncherTemp (Join-Path $BinDirectory 'pyftsubset.exe') -Force
+  Copy-Item $fontToolsLauncherTemp (Join-Path $BinDirectory 'ttx.exe') -Force
+
+  & (Join-Path $BinDirectory 'ttx.exe') --version
+  if ($LASTEXITCODE -ne 0) {
+    throw "Bundled ttx validation failed with exit code $LASTEXITCODE"
+  }
+  & (Join-Path $BinDirectory 'pyftsubset.exe') --help > $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Bundled pyftsubset validation failed with exit code $LASTEXITCODE"
+  }
+
+  Write-Host "FontTools runtime bundled: fonttools $fontToolsVersion, Python $pythonEmbedVersion"
+}
+
 function Resolve-FlutterPath {
   $searchDirectories = @()
   foreach ($envName in @('FLUTTER_BIN_DIR', 'FLUTTER_ROOT', 'FLUTTER_HOME')) {
@@ -106,9 +217,39 @@ function Resolve-FlutterPath {
     -PathFallbacks @('flutter.bat', 'flutter')
 }
 
+function Resolve-DartPath {
+  param(
+    [Parameter(Mandatory = $true)][string]$FlutterPath
+  )
+
+  $searchDirectories = @(Split-Path -Parent $FlutterPath)
+  foreach ($envName in @('FLUTTER_BIN_DIR', 'FLUTTER_ROOT', 'FLUTTER_HOME')) {
+    $envValue = [Environment]::GetEnvironmentVariable($envName)
+    if (-not $envValue) {
+      continue
+    }
+    if ($envName -eq 'FLUTTER_BIN_DIR') {
+      $searchDirectories += $envValue
+    }
+    else {
+      $searchDirectories += (Join-Path $envValue 'bin')
+    }
+  }
+
+  return Resolve-ExecutablePath `
+    -ExecutableName 'dart.bat' `
+    -SearchDirectories $searchDirectories `
+    -PathFallbacks @('dart.bat', 'dart.exe', 'dart')
+}
+
 $flutter = Resolve-FlutterPath
 if (-not $flutter) {
   throw 'Flutter executable not found. Set FLUTTER_BIN_DIR or FLUTTER_ROOT/FLUTTER_HOME, or add flutter to PATH.'
+}
+
+$dart = Resolve-DartPath -FlutterPath $flutter
+if (-not $dart) {
+  throw 'Dart executable not found. It should be available next to Flutter or on PATH.'
 }
 
 $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
@@ -141,6 +282,8 @@ if (Test-Path $repoBin) {
 if (Test-Path $repoFfmpeg) {
   Copy-MatchingFiles -SourceDirectory $repoFfmpeg -Destination $portableBin -Patterns @('ffmpeg.exe', 'ffprobe.exe', '*.dll')
 }
+
+Install-FontToolsRuntime -Destination $portablePython -BinDirectory $portableBin -DartPath $dart
 
 $mkvpropeditPath = Resolve-ExecutablePath `
   -ExecutableName 'mkvpropedit.exe' `

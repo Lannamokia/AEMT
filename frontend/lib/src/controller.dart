@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 
 import 'models.dart';
 import 'services/font_asset_service.dart';
+import 'services/font_asset_service_internal/subset_ass_rewriter.dart';
 import 'services/media_parser.dart';
 import 'services/runtime_service.dart';
 import 'utils/export_utils.dart';
@@ -19,9 +20,33 @@ part 'controller_queue_runner.dart';
 part 'controller_export_config.dart';
 part 'controller_task_planner.dart';
 
+typedef DebugTaskPlanBuilder = Future<TaskPlan> Function(ExportTask task);
+typedef DebugSubsetStepExecutor =
+    Future<({String verifyLogLine, String? fsTypeWarning})> Function(
+      FontSubsetStepPlan plan,
+      Stream<void> cancelSignal,
+    );
+typedef DebugFontResolver =
+    Future<List<ResolvedFontFile>> Function(
+      List<String> importedFontSources,
+      String workDir,
+    );
+typedef DebugAttachmentExtractor =
+    Future<List<ResolvedFontFile>> Function(MediaInfo info, String workDir);
+typedef DebugSystemFontResolver = Future<List<ResolvedFontFile>> Function();
+
 class AemtController extends ChangeNotifier {
-  AemtController() {
-    videoController = VideoController(player);
+  AemtController({@visibleForTesting bool initializePlayer = true})
+    : _playerInitialized = initializePlayer {
+    if (initializePlayer) {
+      player = Player(configuration: const PlayerConfiguration(libass: true));
+      videoController = VideoController(player);
+    }
+    for (final String encoderKey in kSupportedRcModes.keys) {
+      videoEncodingConfigs[encoderKey] = VideoEncodingConfig.defaultsFor(
+        encoderKey,
+      );
+    }
   }
 
   static const String defaultEpisodicNamingTemplate =
@@ -52,10 +77,9 @@ class AemtController extends ChangeNotifier {
     NamingTemplateVariable(name: 'ext', description: '扩展名，如 mp4 / mkv'),
   ];
 
-  final Player player = Player(
-    configuration: const PlayerConfiguration(libass: true),
-  );
+  late final Player player;
   late final VideoController videoController;
+  final bool _playerInitialized;
 
   RuntimeDiagnostics diagnostics = RuntimeDiagnostics.empty;
   MediaInfo? mediaInfo;
@@ -98,10 +122,8 @@ class AemtController extends ChangeNotifier {
   String episodicNamingTemplate = defaultEpisodicNamingTemplate;
   String outputResolution = '';
   String outputFps = '';
-  String avcBitrate = '2500k';
-  String avcMaxrate = '3750k';
-  String hevcBitrate = '2000k';
-  String hevcMaxrate = '3000k';
+  OutputVideoCodec hardsubVideoCodec = OutputVideoCodec.h264;
+  OutputVideoCodec muxVideoCodec = OutputVideoCodec.h265;
   String previewSubtitleKey = 'off';
   bool streamExtractionRunning = false;
   String? streamExtractionMessage;
@@ -113,6 +135,28 @@ class AemtController extends ChangeNotifier {
   final List<ExportTask> tasks = <ExportTask>[];
   final Map<String, List<String>> importedFontEntries =
       <String, List<String>>{};
+  final Map<String, AudioStreamConfig> audioStreamConfigs =
+      <String, AudioStreamConfig>{};
+  AudioStreamConfig audioDefaultProfile = const AudioStreamConfig.defaultAac();
+  final Map<String, VideoEncodingConfig> videoEncodingConfigs =
+      <String, VideoEncodingConfig>{};
+  ToneMappingConfig toneMappingConfig = const ToneMappingConfig.defaultBt709();
+  bool continueOnMissingFont = false;
+  bool fontSubsettingEnabled = true;
+  bool sourceHanEllipsisFix = true;
+  bool _hdrToneMappingNoticeShown = false;
+  final StreamController<void> _queueCancelSignal =
+      StreamController<void>.broadcast(sync: true);
+  @visibleForTesting
+  DebugTaskPlanBuilder? debugTaskPlanBuilder;
+  @visibleForTesting
+  DebugSubsetStepExecutor? debugSubsetStepExecutor;
+  @visibleForTesting
+  DebugFontResolver? debugFontResolver;
+  @visibleForTesting
+  DebugAttachmentExtractor? debugAttachmentExtractor;
+  @visibleForTesting
+  DebugSystemFontResolver? debugSystemFontResolver;
   final Map<String, EncoderTuning> encoderTunings = <String, EncoderTuning>{
     'libx264': const EncoderTuning(
       key: 'libx264',
@@ -315,8 +359,8 @@ class AemtController extends ChangeNotifier {
       final String resolvedPath = p.extension(path).toLowerCase() == '.json'
           ? path
           : '$path.json';
-          final EncodingSettingsSnapshot snapshot =
-            _exportConfig.buildEncodingSettingsSnapshot();
+      final EncodingSettingsSnapshot snapshot = _exportConfig
+          .buildEncodingSettingsSnapshot();
       final String jsonText = const JsonEncoder.withIndent(
         '  ',
       ).convert(snapshot.toJson());
@@ -383,6 +427,88 @@ class AemtController extends ChangeNotifier {
 
   void setHardwareMode(HardwareMode value) {
     hardwareMode = value;
+    for (final String encoderKey in kSupportedRcModes.keys) {
+      reconcileVideoEncodingMode(encoderKey);
+    }
+    notifyListeners();
+  }
+
+  void setAudioStreamConfig(String key, AudioStreamConfig value) {
+    audioStreamConfigs[key] = value;
+    notifyListeners();
+  }
+
+  void setAudioDefaultProfile(AudioStreamConfig value) {
+    audioDefaultProfile = value;
+    _syncAudioStreamConfigsWithMedia(resetExisting: true);
+    notifyListeners();
+  }
+
+  void setVideoEncodingMode(String encoderKey, String mode) {
+    final VideoEncodingConfig current = _videoEncodingConfigFor(encoderKey);
+    videoEncodingConfigs[encoderKey] = current.copyWith(
+      mode: mode,
+      userOverridden: true,
+    );
+    notifyListeners();
+  }
+
+  void setVideoEncodingField(
+    String encoderKey, {
+    int? crf,
+    String? bitrate,
+    String? maxrate,
+    String? minrate,
+    String? bufsize,
+    int? qpI,
+    int? qpP,
+    int? qpB,
+  }) {
+    final VideoEncodingConfig current = _videoEncodingConfigFor(encoderKey);
+    videoEncodingConfigs[encoderKey] = current.copyWith(
+      userOverridden: true,
+      crf: crf,
+      bitrate: bitrate,
+      maxrate: maxrate,
+      minrate: minrate,
+      bufsize: bufsize,
+      qpI: qpI,
+      qpP: qpP,
+      qpB: qpB,
+    );
+    notifyListeners();
+  }
+
+  void reconcileVideoEncodingMode(String encoderKey) {
+    final List<String> supported =
+        kSupportedRcModes[encoderKey] ?? const <String>[];
+    final VideoEncodingConfig current = _videoEncodingConfigFor(encoderKey);
+    if (supported.contains(current.mode)) {
+      return;
+    }
+    videoEncodingConfigs[encoderKey] = VideoEncodingConfig.defaultsFor(
+      encoderKey,
+    );
+    notifyListeners();
+  }
+
+  void setToneMappingConfig(ToneMappingConfig value) {
+    toneMappingConfig = value;
+    notifyListeners();
+  }
+
+  void setContinueOnMissingFont(bool value) {
+    continueOnMissingFont = value;
+    notifyListeners();
+  }
+
+  void setFontSubsettingEnabled(bool value) {
+    fontSubsettingEnabled = value;
+    notifyListeners();
+  }
+
+  void setSourceHanEllipsisFix(bool value) {
+    sourceHanEllipsisFix = value;
     notifyListeners();
   }
 
@@ -436,23 +562,13 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setAvcBitrate(String value) {
-    avcBitrate = value;
+  void setHardsubVideoCodec(OutputVideoCodec value) {
+    hardsubVideoCodec = value;
     notifyListeners();
   }
 
-  void setAvcMaxrate(String value) {
-    avcMaxrate = value;
-    notifyListeners();
-  }
-
-  void setHevcBitrate(String value) {
-    hevcBitrate = value;
-    notifyListeners();
-  }
-
-  void setHevcMaxrate(String value) {
-    hevcMaxrate = value;
+  void setMuxVideoCodec(OutputVideoCodec value) {
+    muxVideoCodec = value;
     notifyListeners();
   }
 
@@ -584,8 +700,145 @@ class AemtController extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  EncodingSettingsSnapshot debugBuildEncodingSettingsSnapshot() {
+    return _exportConfig.buildEncodingSettingsSnapshot();
+  }
+
+  @visibleForTesting
+  void debugApplyEncodingSettingsSnapshot(EncodingSettingsSnapshot snapshot) {
+    _exportConfig.applyEncodingSettingsSnapshot(snapshot);
+    if (snapshot.importStatusMessage != null) {
+      statusMessage = snapshot.importStatusMessage;
+    }
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugSetMediaInfo(MediaInfo? value) {
+    mediaInfo = value;
+    if (value != null) {
+      _syncAudioStreamConfigsWithMedia(resetExisting: true);
+      _appendHdrToneMappingNoticeIfNeeded();
+    }
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugResetSubtitleBindingsForNewMedia() {
+    _resetSubtitleBindingsForNewMedia();
+    _syncExternalSubtitleStreams();
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  List<String> debugBuildAudioStreamArguments(
+    int outIdx,
+    AudioStreamConfig config, {
+    MediaStreamEntry? sourceStream,
+  }) {
+    return _taskPlanner._buildAudioStreamArguments(
+      outIdx,
+      config,
+      sourceStream: sourceStream,
+    );
+  }
+
+  @visibleForTesting
+  bool debugShouldUseLegacyAudioPath(List<MediaStreamEntry> streams) {
+    return _taskPlanner.shouldUseLegacyAudioPath(streams);
+  }
+
+  @visibleForTesting
+  List<String> debugBuildVideoRateControlArguments(
+    String encoder,
+    String codecFamily,
+    VideoEncodingConfig config,
+  ) {
+    return _taskPlanner._buildVideoRateControlArguments(
+      _EncoderSelection(encoder: encoder, codecFamily: codecFamily),
+      config,
+    );
+  }
+
+  @visibleForTesting
+  ({
+    String filterChain,
+    List<String> metadataArgs,
+    List<String> logLines,
+    SourceColorClass sourceClass,
+    String? tonemapAlgorithm,
+  })
+  debugBuildToneMappingFilter(
+    VideoStreamInfo video,
+    ToneMappingConfig config, {
+    required bool hasZscale,
+  }) {
+    return _taskPlanner._buildToneMappingFilter(
+      video,
+      config,
+      hasZscale: hasZscale,
+    );
+  }
+
+  @visibleForTesting
+  Future<TaskPlan> debugBuildTaskPlan(ExportTask task) {
+    return _taskPlanner.buildTaskPlan(task);
+  }
+
+  @visibleForTesting
+  Future<
+    ({
+      List<ResolvedFontFile> fonts,
+      Map<String, String> renameMap,
+      List<String> warnings,
+      List<String> assSubtitlePaths,
+      Map<String, String> rewrittenAssPaths,
+      List<CommandStep> subsetSteps,
+    })
+  >
+  debugRunFontPipeline({
+    required List<SubtitleBinding> bindings,
+    required List<ResolvedFontFile> importedFonts,
+    required List<ResolvedFontFile> extractedAttachments,
+    List<ResolvedFontFile> systemFonts = const <ResolvedFontFile>[],
+    required String workDir,
+  }) {
+    return _taskPlanner._runFontPipeline(
+      bindings: bindings,
+      importedFonts: importedFonts,
+      extractedAttachments: extractedAttachments,
+      systemFonts: systemFonts,
+      workDir: workDir,
+    );
+  }
+
   void _markChanged() {
     notifyListeners();
+  }
+
+  Future<void> _deleteOwnedTempDirectory(String path) async {
+    if (!_isOwnedTempDirectory(path)) {
+      return;
+    }
+    final Directory directory = Directory(path);
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+  }
+
+  bool _isOwnedTempDirectory(String path) {
+    final String normalizedPath = p.normalize(p.absolute(path)).toLowerCase();
+    final String tempRoot = p
+        .normalize(p.absolute(Directory.systemTemp.path))
+        .toLowerCase();
+    final String basename = p.basename(normalizedPath);
+    return basename.startsWith('aemt_') && p.isWithin(tempRoot, normalizedPath);
+  }
+
+  @visibleForTesting
+  bool debugIsOwnedTempDirectory(String path) {
+    return _isOwnedTempDirectory(path);
   }
 
   Future<void> exportNow(
@@ -630,14 +883,21 @@ class AemtController extends ChangeNotifier {
     _queueRunner.clearQueue();
   }
 
+  void clearAllTasks() {
+    _queueRunner.clearAllTasks();
+  }
+
   Future<void> retryAll() async {
     await _queueRunner.retryAll();
   }
 
   @override
   void dispose() {
-    unawaited(player.dispose());
+    if (_playerInitialized) {
+      unawaited(player.dispose());
+    }
     unawaited(_mediaOps.resetPreviewSubtitleArtifacts());
+    unawaited(_queueCancelSignal.close());
     super.dispose();
   }
 
@@ -709,6 +969,19 @@ class AemtController extends ChangeNotifier {
       selectedHardsubBindingKeys.remove(key);
       selectedMuxBindingKeys.remove(key);
     }
+  }
+
+  void _resetSubtitleBindingsForNewMedia() {
+    simplifiedBinding = simplifiedBinding.copyWith(clearFile: true);
+    traditionalBinding = traditionalBinding.copyWith(clearFile: true);
+    customBindings.clear();
+    selectedHardsubBindingKeys
+      ..clear()
+      ..addAll(<String>{'chs', 'cht'});
+    selectedMuxBindingKeys
+      ..clear()
+      ..addAll(<String>{'chs', 'cht'});
+    previewSubtitleKey = 'off';
   }
 
   void _validateTaskBindings(
@@ -789,6 +1062,7 @@ class AemtController extends ChangeNotifier {
     mediaInfo = mediaInfo!.copyWith(
       streams: <MediaStreamEntry>[...inputStreams, ...externalStreams],
     );
+    _syncAudioStreamConfigsWithMedia();
   }
 
   bool _isBindingEnabled(MediaInfo info, SubtitleBinding binding) {
@@ -801,6 +1075,60 @@ class AemtController extends ChangeNotifier {
           stream.externalPath == binding.filePath &&
           stream.enabled,
     );
+  }
+
+  String _audioStreamConfigKey(String inputPath, int streamIndex) {
+    return '$inputPath#$streamIndex';
+  }
+
+  VideoEncodingConfig _videoEncodingConfigFor(String encoderKey) {
+    return videoEncodingConfigs.putIfAbsent(
+      encoderKey,
+      () => VideoEncodingConfig.defaultsFor(encoderKey),
+    );
+  }
+
+  void _syncAudioStreamConfigsWithMedia({bool resetExisting = false}) {
+    final MediaInfo? info = mediaInfo;
+    if (info == null) {
+      return;
+    }
+    final Set<String> activeKeys = <String>{};
+    for (final MediaStreamEntry stream in info.streams.where(
+      (MediaStreamEntry stream) =>
+          stream.kind == StreamKind.audio &&
+          stream.origin == StreamOrigin.input,
+    )) {
+      final String key = _audioStreamConfigKey(info.inputPath, stream.index);
+      activeKeys.add(key);
+      if (resetExisting || !audioStreamConfigs.containsKey(key)) {
+        audioStreamConfigs[key] = audioDefaultProfile.copyWith();
+      }
+    }
+    audioStreamConfigs.removeWhere(
+      (String key, AudioStreamConfig _) =>
+          key.startsWith('${info.inputPath}#') && !activeKeys.contains(key),
+    );
+  }
+
+  void _appendHdrToneMappingNoticeIfNeeded() {
+    final VideoStreamInfo? video = mediaInfo?.primaryVideo;
+    if (video == null ||
+        _hdrToneMappingNoticeShown ||
+        toneMappingConfig.tonemapMode != 'auto') {
+      return;
+    }
+    final SourceColorClass colorClass = detectSourceColorClass(video);
+    if (colorClass != SourceColorClass.hdrPq &&
+        colorClass != SourceColorClass.hdrHlg &&
+        colorClass != SourceColorClass.dolbyVision) {
+      return;
+    }
+    const String notice = '已自动启用色调映射 (HDR → BT.709)，可在 色调映射 选项卡中查看与覆盖。';
+    statusMessage = statusMessage == null || statusMessage!.isEmpty
+        ? notice
+        : '${statusMessage!}\n$notice';
+    _hdrToneMappingNoticeShown = true;
   }
 }
 

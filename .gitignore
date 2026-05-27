@@ -1,3 +1,5 @@
 /dist
 /ffmpeg
-/tools
+/tools/*
+!/tools/fonttools_launcher.dart
+.kiro

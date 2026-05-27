@@ -62,10 +62,13 @@ class _MediaOps {
         path,
         jsonDecode(result.stdout.toString()) as Map<String, dynamic>,
       );
+      _controller._resetSubtitleBindingsForNewMedia();
+      _controller._syncAudioStreamConfigsWithMedia(resetExisting: true);
       _controller.titleOverride = p.basenameWithoutExtension(path);
       _controller.outputFileNameOverride = p.basenameWithoutExtension(path);
       _controller.outputResolution =
-          _controller.mediaInfo!.width == 0 || _controller.mediaInfo!.height == 0
+          _controller.mediaInfo!.width == 0 ||
+              _controller.mediaInfo!.height == 0
           ? ''
           : '${_controller.mediaInfo!.width}x${_controller.mediaInfo!.height}';
       _controller.outputFps = _controller.mediaInfo!.fps <= 0
@@ -75,10 +78,11 @@ class _MediaOps {
       _controller.outputDirectory = _controller.outputDirectory.isEmpty
           ? p.join(p.dirname(path), 'outputs')
           : _controller.outputDirectory;
-      _controller.statusMessage = '已解析 ${_controller.mediaInfo!.streams.length} 条流。';
+      _controller.statusMessage =
+          '已解析 ${_controller.mediaInfo!.streams.length} 条流。';
+      _controller._appendHdrToneMappingNoticeIfNeeded();
       await _controller.player.open(Media(path), play: false);
       await _controller.player.setSubtitleTrack(SubtitleTrack.no());
-      _controller.previewSubtitleKey = 'off';
       _controller._syncExternalSubtitleStreams();
     } catch (error) {
       _controller.statusMessage = '解析失败: $error';
@@ -140,10 +144,12 @@ class _MediaOps {
       return;
     }
     for (final PlatformFile file in result.files) {
-      if (file.path != null && !_controller.importedFontSources.contains(file.path)) {
+      if (file.path != null &&
+          !_controller.importedFontSources.contains(file.path)) {
         _controller.importedFontSources.add(file.path!);
-        _controller.importedFontEntries[file.path!] =
-            await _controller._fontAssetService.inspectSource(file.path!);
+        _controller.importedFontEntries[file.path!] = await _controller
+            ._fontAssetService
+            .inspectSource(file.path!);
       }
     }
     _controller.notifyListeners();
@@ -159,11 +165,15 @@ class _MediaOps {
 
   Future<void> seekRelative(Duration delta) async {
     final Duration target = _controller.player.state.position + delta;
-    await _controller.player.seek(target < Duration.zero ? Duration.zero : target);
+    await _controller.player.seek(
+      target < Duration.zero ? Duration.zero : target,
+    );
   }
 
   Future<void> seekTo(Duration position) async {
-    await _controller.player.seek(position < Duration.zero ? Duration.zero : position);
+    await _controller.player.seek(
+      position < Duration.zero ? Duration.zero : position,
+    );
   }
 
   void updateBindingMeta({
@@ -235,7 +245,9 @@ class _MediaOps {
             (MediaStreamEntry stream) =>
                 !(stream.origin == StreamOrigin.input &&
                     stream.kind == StreamKind.subtitle &&
-                    _controller.removedEmbeddedSubtitleIndexes.contains(stream.index)),
+                    _controller.removedEmbeddedSubtitleIndexes.contains(
+                      stream.index,
+                    )),
           )
           .toList(),
     );
@@ -266,7 +278,9 @@ class _MediaOps {
         return;
       }
       if (value.startsWith('compat:')) {
-        final int? streamIndex = int.tryParse(value.substring('compat:'.length));
+        final int? streamIndex = int.tryParse(
+          value.substring('compat:'.length),
+        );
         if (streamIndex == null) {
           throw Exception('无效的兼容预览字幕索引。');
         }
@@ -275,7 +289,9 @@ class _MediaOps {
         await _controller.player.setSubtitleTrack(
           SubtitleTrack.uri(
             subtitlePath,
-            title: stream.title.isNotEmpty ? stream.title : '内封字幕 ${stream.index}',
+            title: stream.title.isNotEmpty
+                ? stream.title
+                : '内封字幕 ${stream.index}',
             language: stream.language,
           ),
         );
@@ -283,7 +299,11 @@ class _MediaOps {
       }
       if (value.startsWith('embedded:')) {
         final String id = value.substring('embedded:'.length);
-        final Iterable<SubtitleTrack> matches = _controller.player.state.tracks.subtitle
+        final Iterable<SubtitleTrack> matches = _controller
+            .player
+            .state
+            .tracks
+            .subtitle
             .where((SubtitleTrack track) => track.id == id);
         if (matches.isNotEmpty) {
           await _controller.player.setSubtitleTrack(matches.first);
@@ -292,7 +312,9 @@ class _MediaOps {
       }
       throw Exception('预览播放器未暴露该字幕轨。');
     } catch (error) {
-      _controller.previewSubtitleKey = previousValue == value ? 'off' : previousValue;
+      _controller.previewSubtitleKey = previousValue == value
+          ? 'off'
+          : previousValue;
       await _controller.player.setSubtitleTrack(SubtitleTrack.no());
       _controller.statusMessage = '字幕预览失败: $error';
       _controller.notifyListeners();
@@ -300,20 +322,29 @@ class _MediaOps {
   }
 
   void updateChapterTitle(int index, String value) {
-    _updateChapter(index, (ChapterEntry chapter) => chapter.copyWith(title: value));
+    _updateChapter(
+      index,
+      (ChapterEntry chapter) => chapter.copyWith(title: value),
+    );
   }
 
   void updateChapterStart(int index, String value) {
     final Duration? parsed = parseTimestamp(value);
     if (parsed != null) {
-      _updateChapter(index, (ChapterEntry chapter) => chapter.copyWith(start: parsed));
+      _updateChapter(
+        index,
+        (ChapterEntry chapter) => chapter.copyWith(start: parsed),
+      );
     }
   }
 
   void updateChapterEnd(int index, String value) {
     final Duration? parsed = parseTimestamp(value);
     if (parsed != null) {
-      _updateChapter(index, (ChapterEntry chapter) => chapter.copyWith(end: parsed));
+      _updateChapter(
+        index,
+        (ChapterEntry chapter) => chapter.copyWith(end: parsed),
+      );
     }
   }
 
@@ -321,7 +352,9 @@ class _MediaOps {
     if (_controller.mediaInfo == null) {
       return;
     }
-    final List<ChapterEntry> next = List<ChapterEntry>.from(_controller.mediaInfo!.chapters);
+    final List<ChapterEntry> next = List<ChapterEntry>.from(
+      _controller.mediaInfo!.chapters,
+    );
     next.add(
       ChapterEntry(
         title: 'Episode',
@@ -337,30 +370,46 @@ class _MediaOps {
     if (_controller.mediaInfo == null) {
       return;
     }
-    final List<ChapterEntry> next = List<ChapterEntry>.from(_controller.mediaInfo!.chapters)
-      ..removeAt(index);
+    final List<ChapterEntry> next = List<ChapterEntry>.from(
+      _controller.mediaInfo!.chapters,
+    )..removeAt(index);
     _controller.mediaInfo = _controller.mediaInfo!.copyWith(chapters: next);
     _controller.notifyListeners();
   }
 
   void updateStreamEnabled(int index, bool value) {
-    _updateStream(index, (MediaStreamEntry stream) => stream.copyWith(enabled: value));
+    _updateStream(
+      index,
+      (MediaStreamEntry stream) => stream.copyWith(enabled: value),
+    );
   }
 
   void updateStreamTitle(int index, String value) {
-    _updateStream(index, (MediaStreamEntry stream) => stream.copyWith(title: value));
+    _updateStream(
+      index,
+      (MediaStreamEntry stream) => stream.copyWith(title: value),
+    );
   }
 
   void updateStreamLanguage(int index, String value) {
-    _updateStream(index, (MediaStreamEntry stream) => stream.copyWith(language: value));
+    _updateStream(
+      index,
+      (MediaStreamEntry stream) => stream.copyWith(language: value),
+    );
   }
 
   void updateStreamDefault(int index, bool value) {
-    _updateStream(index, (MediaStreamEntry stream) => stream.copyWith(isDefault: value));
+    _updateStream(
+      index,
+      (MediaStreamEntry stream) => stream.copyWith(isDefault: value),
+    );
   }
 
   void updateStreamForced(int index, bool value) {
-    _updateStream(index, (MediaStreamEntry stream) => stream.copyWith(isForced: value));
+    _updateStream(
+      index,
+      (MediaStreamEntry stream) => stream.copyWith(isForced: value),
+    );
   }
 
   void removeStream(int index) {
@@ -369,17 +418,24 @@ class _MediaOps {
     }
     final MediaStreamEntry target = _controller.mediaInfo!.streams[index];
     if (target.origin == StreamOrigin.input) {
-      _updateStream(index, (MediaStreamEntry stream) => stream.copyWith(enabled: false));
+      _updateStream(
+        index,
+        (MediaStreamEntry stream) => stream.copyWith(enabled: false),
+      );
       return;
     }
     final List<MediaStreamEntry> inputStreams = _controller.mediaInfo!.streams
         .where((MediaStreamEntry stream) => stream.origin == StreamOrigin.input)
         .toList();
-    final SubtitleBinding? binding = _controller._findBindingByPath(target.externalPath);
+    final SubtitleBinding? binding = _controller._findBindingByPath(
+      target.externalPath,
+    );
     if (binding != null) {
       _controller._clearBindingFile(binding.key);
     }
-    _controller.mediaInfo = _controller.mediaInfo!.copyWith(streams: inputStreams);
+    _controller.mediaInfo = _controller.mediaInfo!.copyWith(
+      streams: inputStreams,
+    );
     _controller._syncExternalSubtitleStreams();
     _controller.notifyListeners();
   }
@@ -391,7 +447,9 @@ class _MediaOps {
   }
 
   bool isStreamSelectedForExtraction(MediaStreamEntry stream) {
-    return _controller.selectedStreamExtractionKeys.contains(_streamSelectionKey(stream));
+    return _controller.selectedStreamExtractionKeys.contains(
+      _streamSelectionKey(stream),
+    );
   }
 
   bool shouldUseCompatibleSubtitlePreview(MediaStreamEntry stream) {
@@ -432,7 +490,11 @@ class _MediaOps {
     if (value) {
       _controller.selectedStreamExtractionKeys
         ..clear()
-        ..addAll(_controller.mediaInfo!.streams.where(isStreamExtractable).map(_streamSelectionKey));
+        ..addAll(
+          _controller.mediaInfo!.streams
+              .where(isStreamExtractable)
+              .map(_streamSelectionKey),
+        );
     } else {
       _controller.selectedStreamExtractionKeys.clear();
     }
@@ -453,7 +515,9 @@ class _MediaOps {
         .where(
           (MediaStreamEntry stream) =>
               isStreamExtractable(stream) &&
-              _controller.selectedStreamExtractionKeys.contains(_streamSelectionKey(stream)),
+              _controller.selectedStreamExtractionKeys.contains(
+                _streamSelectionKey(stream),
+              ),
         )
         .toList();
     if (selectedStreams.isEmpty) {
@@ -462,14 +526,17 @@ class _MediaOps {
       return;
     }
     _controller.streamExtractionRunning = true;
-    _controller.streamExtractionMessage = '正在抽取 ${selectedStreams.length} 条流...';
+    _controller.streamExtractionMessage =
+        '正在抽取 ${selectedStreams.length} 条流...';
     _controller.notifyListeners();
     try {
       final String outputDir = _defaultStreamExtractionDirectory(info);
       await Directory(outputDir).create(recursive: true);
       final List<String> outputs = <String>[];
       final List<MediaStreamEntry> attachmentStreams = selectedStreams
-          .where((MediaStreamEntry stream) => stream.kind == StreamKind.attachment)
+          .where(
+            (MediaStreamEntry stream) => stream.kind == StreamKind.attachment,
+          )
           .toList();
       if (attachmentStreams.isNotEmpty) {
         outputs.addAll(
@@ -498,11 +565,7 @@ class _MediaOps {
 
   Future<void> resetPreviewSubtitleArtifacts() async {
     _controller._previewSubtitleCache.clear();
-    final Directory? directory = _controller._previewSubtitleTempDirectory;
     _controller._previewSubtitleTempDirectory = null;
-    if (directory != null && await directory.exists()) {
-      await directory.delete(recursive: true);
-    }
   }
 
   Future<String> _extractSingleInputStream(
@@ -510,7 +573,11 @@ class _MediaOps {
     MediaStreamEntry stream,
     String outputDir,
   ) async {
-    final String outputPath = _buildStreamExtractionOutputPath(info, stream, outputDir);
+    final String outputPath = _buildStreamExtractionOutputPath(
+      info,
+      stream,
+      outputDir,
+    );
     await Directory(p.dirname(outputPath)).create(recursive: true);
     final List<String> arguments = _buildSingleStreamExtractionArguments(
       info: info,
@@ -558,14 +625,16 @@ class _MediaOps {
   }
 
   bool _requiresCompatibleSubtitlePreview(MediaStreamEntry stream) {
-    if (stream.kind != StreamKind.subtitle || stream.origin != StreamOrigin.input) {
+    if (stream.kind != StreamKind.subtitle ||
+        stream.origin != StreamOrigin.input) {
       return false;
     }
     return <String>{'arib_caption'}.contains(stream.codec.trim().toLowerCase());
   }
 
   bool _supportsDirectEmbeddedSubtitlePreview(MediaStreamEntry stream) {
-    if (stream.kind != StreamKind.subtitle || stream.origin != StreamOrigin.input) {
+    if (stream.kind != StreamKind.subtitle ||
+        stream.origin != StreamOrigin.input) {
       return false;
     }
     return <String>{
@@ -598,7 +667,8 @@ class _MediaOps {
   }
 
   bool _canExtractSubtitleAsAss(MediaStreamEntry stream) {
-    if (stream.kind != StreamKind.subtitle || stream.origin != StreamOrigin.input) {
+    if (stream.kind != StreamKind.subtitle ||
+        stream.origin != StreamOrigin.input) {
       return false;
     }
     return <String>{
@@ -623,7 +693,10 @@ class _MediaOps {
     }
     final MediaInfo info = _controller.mediaInfo!;
     final Directory tempDir = await _ensurePreviewSubtitleTempDirectory();
-    final String outputPath = p.join(tempDir.path, 'preview_sub_${stream.index}.ass');
+    final String outputPath = p.join(
+      tempDir.path,
+      'preview_sub_${stream.index}.ass',
+    );
     _controller.statusMessage = '正在转换内封字幕 ${stream.index} 为兼容预览格式...';
     _controller.notifyListeners();
     final ProcessResult extraction = await Process.run(
@@ -655,7 +728,9 @@ class _MediaOps {
     if (existing != null && existing.existsSync()) {
       return existing;
     }
-    final Directory created = await Directory.systemTemp.createTemp('aemt_preview_');
+    final Directory created = await Directory.systemTemp.createTemp(
+      'aemt_preview_',
+    );
     _controller._previewSubtitleTempDirectory = created;
     return created;
   }
@@ -674,8 +749,13 @@ class _MediaOps {
       case StreamKind.audio:
         return p.join(outputDir, '$baseName.audio${stream.index}.mka');
       case StreamKind.subtitle:
-        final String extension = _canExtractSubtitleAsAss(stream) ? 'ass' : 'mks';
-        return p.join(outputDir, '$baseName.subtitle${stream.index}.$extension');
+        final String extension = _canExtractSubtitleAsAss(stream)
+            ? 'ass'
+            : 'mks';
+        return p.join(
+          outputDir,
+          '$baseName.subtitle${stream.index}.$extension',
+        );
       case StreamKind.attachment:
         final String fileName =
             stream.attachmentFileName?.trim().isNotEmpty == true
@@ -733,7 +813,9 @@ class _MediaOps {
   }
 
   String _sanitizeFileNameComponent(String value) {
-    final String sanitized = value.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+    final String sanitized = value
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+        .trim();
     return sanitized.isEmpty ? 'stream' : sanitized;
   }
 

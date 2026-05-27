@@ -1,0 +1,61 @@
+
+name: Build and Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install frontend dependencies
+        run: flutter pub get
+        working-directory: frontend
+
+      - name: Build portable package
+        shell: pwsh
+        run: ./scripts/build_portable.ps1
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aemt-windows-portable
+          path: |
+            dist/AEMT-windows-portable.zip
+            dist/AEMT-windows-portable/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aemt-windows-portable
+          path: build_output
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build_output/AEMT-windows-portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

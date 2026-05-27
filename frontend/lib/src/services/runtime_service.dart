@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../models.dart';
@@ -16,6 +17,10 @@ class RuntimeService {
       p.join(currentDir, 'bin'),
       p.join(parentDir, 'bin'),
     ];
+    final List<String> customSearchDirs = _customRuntimeSearchDirectories(
+      customRuntimeDirectory: customRuntimeDirectory,
+      customRuntimeExecutable: customRuntimeExecutable,
+    );
     final String? ffmpeg = _findExecutable(
       executableName: 'ffmpeg.exe',
       searchDirectories: preferredBinDirs,
@@ -65,19 +70,46 @@ class RuntimeService {
       customRuntimeDirectory: customRuntimeDirectory,
       customRuntimeExecutable: customRuntimeExecutable,
     );
+    final String? pyftsubset = _findExecutable(
+      executableName: 'pyftsubset.exe',
+      searchDirectories: <String>[...customSearchDirs, ...preferredBinDirs],
+      environmentVariable: 'FONTTOOLS_BIN_DIR',
+      pathFallbacks: <String>['pyftsubset.exe', 'pyftsubset'],
+    );
+    final String? ttx = _findExecutable(
+      executableName: 'ttx.exe',
+      searchDirectories: <String>[...customSearchDirs, ...preferredBinDirs],
+      environmentVariable: 'FONTTOOLS_BIN_DIR',
+      pathFallbacks: <String>['ttx.exe', 'ttx'],
+    );
     final String? resolvedFfmpeg = customFfmpeg ?? ffmpeg;
     final String? resolvedFfprobe = customFfprobe ?? ffprobe;
     final String? resolvedMkvpropedit = customMkvpropedit ?? mkvpropedit;
     final String? resolved7z = custom7z ?? sevenZip;
     List<String> hwaccels = <String>[];
     Set<String> encoders = <String>{};
+    Set<String> audioEncoders = <String>{};
+    bool hasZscale = false;
     if (resolvedFfmpeg != null) {
       hwaccels = await _readFfmpegOutput(resolvedFfmpeg, <String>[
         '-hide_banner',
         '-hwaccels',
       ]);
       encoders = await _probeHardwareVideoEncoders(resolvedFfmpeg);
+      final List<String> filterLines = await _readFfmpegOutput(
+        resolvedFfmpeg,
+        <String>['-hide_banner', '-filters'],
+      );
+      hasZscale = _parseHasZscale(filterLines);
+      final List<String> encoderLines = await _readFfmpegOutput(
+        resolvedFfmpeg,
+        <String>['-hide_banner', '-encoders'],
+      );
+      audioEncoders = _parseAudioEncoders(encoderLines);
     }
+    final Version? fontToolsVersion = ttx == null
+        ? null
+        : await _probeFontToolsVersion(ttx);
     return RuntimeDiagnostics(
       ffmpeg: RuntimeToolInfo(
         name: 'ffmpeg',
@@ -95,9 +127,28 @@ class RuntimeService {
         required: false,
       ),
       sevenZip: RuntimeToolInfo(name: '7z', path: resolved7z, required: false),
+      pyftsubset: RuntimeToolInfo(
+        name: 'pyftsubset',
+        path: pyftsubset,
+        required: false,
+      ),
+      ttx: RuntimeToolInfo(name: 'ttx', path: ttx, required: false),
+      fontToolsVersion: fontToolsVersion,
       hwaccels: hwaccels,
       videoEncoders: encoders,
+      hasZscale: hasZscale,
+      audioEncoders: audioEncoders,
     );
+  }
+
+  @visibleForTesting
+  static bool parseHasZscaleForTesting(List<String> lines) {
+    return _parseHasZscale(lines);
+  }
+
+  @visibleForTesting
+  static Set<String> parseAudioEncodersForTesting(List<String> lines) {
+    return _parseAudioEncoders(lines);
   }
 
   static Future<List<String>> _readFfmpegOutput(
@@ -163,6 +214,47 @@ class RuntimeService {
     return result;
   }
 
+  static bool _parseHasZscale(List<String> lines) {
+    return lines.any((String line) => RegExp(r'\bzscale\b').hasMatch(line));
+  }
+
+  static Set<String> _parseAudioEncoders(List<String> lines) {
+    const Set<String> supported = <String>{
+      'aac',
+      'libfdk_aac',
+      'libopus',
+      'flac',
+      'ac3',
+      'eac3',
+    };
+    final Set<String> result = <String>{};
+    for (final String line in lines) {
+      final Iterable<RegExpMatch> matches = RegExp(
+        r'\b(aac|libfdk_aac|libopus|flac|ac3|eac3)\b',
+      ).allMatches(line);
+      for (final RegExpMatch match in matches) {
+        final String encoder = match.group(1)!;
+        if (supported.contains(encoder)) {
+          result.add(encoder);
+        }
+      }
+    }
+    return result;
+  }
+
+  static Future<Version?> _probeFontToolsVersion(String ttxPath) async {
+    final ProcessResult result = await Process.run(
+      ttxPath,
+      <String>['--version'],
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+    if (result.exitCode != 0) {
+      return null;
+    }
+    return Version.tryParse('${result.stdout}\n${result.stderr}');
+  }
+
   static String? _findExecutable({
     required String executableName,
     required List<String> searchDirectories,
@@ -223,6 +315,21 @@ class RuntimeService {
     return null;
   }
 
+  static List<String> _customRuntimeSearchDirectories({
+    required String? customRuntimeDirectory,
+    required String? customRuntimeExecutable,
+  }) {
+    final List<String> result = <String>[];
+    if (customRuntimeDirectory != null && customRuntimeDirectory.isNotEmpty) {
+      result.add(customRuntimeDirectory);
+      result.add(p.join(customRuntimeDirectory, 'bin'));
+    }
+    if (customRuntimeExecutable != null && customRuntimeExecutable.isNotEmpty) {
+      result.add(p.dirname(customRuntimeExecutable));
+    }
+    return result;
+  }
+
   static String? _resolveFromPath(String executable) {
     final List<String> entries = (Platform.environment['PATH'] ?? '')
         .split(';')
@@ -247,6 +354,14 @@ String buildStartupMessage(RuntimeDiagnostics runtime) {
     ..writeln('FFprobe: ${runtime.ffprobe.path ?? '未找到'}')
     ..writeln('MKVToolNix: ${runtime.mkvpropedit.path ?? '未找到'}')
     ..writeln('7-Zip: ${runtime.sevenZip.path ?? '未找到'}')
+    ..writeln('pyftsubset: ${runtime.pyftsubset.path ?? '未找到'}')
+    ..writeln('ttx: ${runtime.ttx.path ?? '未找到'}')
+    ..writeln(
+      'fonttools: ${runtime.fontToolsVersion?.toString() ?? '未知'}',
+    )
+    ..writeln(
+      runtime.hasZscale ? 'zscale: 可用' : '当前 ffmpeg 未启用 libzimg，色调映射不可用',
+    )
     ..writeln()
     ..writeln(
       '可用硬件加速视频编码探测结果: ${runtime.hardwareVideoEncoderLabels.isEmpty ? '无' : runtime.hardwareVideoEncoderLabels.join(', ')}',

@@ -155,6 +155,7 @@ Widget buildField(
   required String key,
   String? hintText,
   int maxLines = 1,
+  bool enabled = true,
 }) {
   return SyncedTextField(
     key: ValueKey<String>(key),
@@ -162,6 +163,7 @@ Widget buildField(
     value: value,
     hintText: hintText,
     maxLines: maxLines,
+    enabled: enabled,
     onChanged: onChanged,
   );
 }
@@ -174,6 +176,7 @@ class SyncedTextField extends StatefulWidget {
     required this.onChanged,
     this.hintText,
     this.maxLines = 1,
+    this.enabled = true,
   });
 
   final String label;
@@ -181,6 +184,7 @@ class SyncedTextField extends StatefulWidget {
   final ValueChanged<String> onChanged;
   final String? hintText;
   final int maxLines;
+  final bool enabled;
 
   @override
   State<SyncedTextField> createState() => _SyncedTextFieldState();
@@ -188,17 +192,19 @@ class SyncedTextField extends StatefulWidget {
 
 class _SyncedTextFieldState extends State<SyncedTextField> {
   late final TextEditingController _textController;
+  late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _textController = TextEditingController(text: widget.value);
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
   }
 
   @override
   void didUpdateWidget(covariant SyncedTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_textController.text == widget.value) {
+    if (_focusNode.hasFocus || _textController.text == widget.value) {
       return;
     }
     _textController.value = TextEditingValue(
@@ -209,20 +215,38 @@ class _SyncedTextFieldState extends State<SyncedTextField> {
 
   @override
   void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     _textController.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _commit();
+    }
+  }
+
+  void _commit() {
+    final String value = _textController.text;
+    if (value != widget.value) {
+      widget.onChanged(value);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: _textController,
+      focusNode: _focusNode,
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hintText,
       ),
+      enabled: widget.enabled,
       maxLines: widget.maxLines,
-      onChanged: widget.onChanged,
+      onFieldSubmitted: (_) => _commit(),
     );
   }
 }
@@ -248,14 +272,14 @@ class _EpisodicNamingTemplateEditorState
     _textController = TextEditingController(
       text: widget.controller.episodicNamingTemplate,
     );
-    _focusNode = FocusNode();
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
   }
 
   @override
   void didUpdateWidget(covariant EpisodicNamingTemplateEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     final String nextValue = widget.controller.episodicNamingTemplate;
-    if (_textController.text == nextValue) {
+    if (_focusNode.hasFocus || _textController.text == nextValue) {
       return;
     }
     final int offset = _textController.selection.baseOffset.clamp(
@@ -270,9 +294,23 @@ class _EpisodicNamingTemplateEditorState
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChanged);
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _commit();
+    }
+  }
+
+  void _commit() {
+    final String value = _textController.text;
+    if (value != widget.controller.episodicNamingTemplate) {
+      widget.controller.setEpisodicNamingTemplate(value);
+    }
   }
 
   void _insertVariable(String variableName) {
@@ -304,7 +342,7 @@ class _EpisodicNamingTemplateEditorState
             hintText: AemtController.defaultEpisodicNamingTemplate,
           ),
           maxLines: 2,
-          onChanged: widget.controller.setEpisodicNamingTemplate,
+          onFieldSubmitted: (_) => _commit(),
         ),
         const SizedBox(height: 10),
         Container(
@@ -353,13 +391,25 @@ class _EpisodicNamingTemplateEditorState
 }
 
 Widget toolChip(RuntimeToolInfo tool) {
+  return statusChip(
+    label: tool.name,
+    status: tool.available ? '已就绪' : '未找到',
+    ok: tool.available,
+  );
+}
+
+Widget statusChip({
+  required String label,
+  required String status,
+  required bool ok,
+}) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
-      color: tool.available ? const Color(0xFFE8F3EB) : const Color(0xFFFDECEC),
+      color: ok ? const Color(0xFFE8F3EB) : const Color(0xFFFDECEC),
       borderRadius: BorderRadius.circular(999),
     ),
-    child: Text('${tool.name}: ${tool.available ? '已就绪' : '未找到'}'),
+    child: Text('$label: $status'),
   );
 }
 
