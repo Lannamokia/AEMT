@@ -462,19 +462,10 @@ class FontAssetService {
   }
 
   bool _isNonRenderingCodepoint(int codepoint) {
-    if (codepoint == 0x09 || codepoint == 0x0A || codepoint == 0x0D) {
-      return true;
-    }
-    if (codepoint >= 0x200B && codepoint <= 0x200F) {
-      return true;
-    }
-    if (codepoint >= 0x202A && codepoint <= 0x202E) {
-      return true;
-    }
-    if (codepoint >= 0x2060 && codepoint <= 0x206F) {
-      return true;
-    }
-    return codepoint >= 0xFE00 && codepoint <= 0xFE0F;
+    return codepoint == 0x09 ||
+        codepoint == 0x0A ||
+        codepoint == 0x0D ||
+        _isUnicodeFormatControl(codepoint);
   }
 
   String _formatUnicodeFile(List<int> codepoints) {
@@ -714,6 +705,9 @@ class FontAssetService {
     final bool vertical = fontName.trimLeft().startsWith('@');
     final Set<int> target = result.putIfAbsent(normalized, () => <int>{});
     for (final int codepoint in text.runes) {
+      if (_isUnicodeFormatControl(codepoint)) {
+        continue;
+      }
       target.add(codepoint);
       if (vertical) {
         final int? mapped = kVertMappingTable[codepoint];
@@ -724,8 +718,23 @@ class FontAssetService {
     }
   }
 
+  bool _isUnicodeFormatControl(int codepoint) {
+    if (codepoint >= 0x200B && codepoint <= 0x200F) {
+      return true;
+    }
+    if (codepoint >= 0x202A && codepoint <= 0x202E) {
+      return true;
+    }
+    if (codepoint >= 0x2060 && codepoint <= 0x206F) {
+      return true;
+    }
+    return codepoint >= 0xFE00 && codepoint <= 0xFE0F;
+  }
+
   Set<int> _visibleCodepoints(String text) {
-    return text.runes.toSet();
+    return text.runes
+        .where((int codepoint) => !_isUnicodeFormatControl(codepoint))
+        .toSet();
   }
 
   List<String> _parseFormat(String line) {

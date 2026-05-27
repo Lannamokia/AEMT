@@ -21,12 +21,9 @@ Future<AssRewriteResult> rewriteAssWithRenameMap({
   final String text = _decodeSubtitleBytes(raw);
   final String rewritten = rewriteAssText(text, renameMap, newline: newline);
   await Directory(p.dirname(outputPath)).create(recursive: true);
-  await File(outputPath).writeAsBytes(<int>[
-    0xEF,
-    0xBB,
-    0xBF,
-    ...utf8.encode(rewritten),
-  ]);
+  await File(
+    outputPath,
+  ).writeAsBytes(<int>[0xEF, 0xBB, 0xBF, ...utf8.encode(rewritten)]);
   return AssRewriteResult(outputPath: outputPath, changed: rewritten != text);
 }
 
@@ -77,8 +74,13 @@ String rewriteAssText(
       changed = changed || rewritten != line;
       continue;
     }
-    if (section == '[events]' && trimmed.toLowerCase().startsWith('dialogue:')) {
-      final String rewritten = _rewriteDialogueLine(line, eventFormat, renameMap);
+    if (section == '[events]' &&
+        trimmed.toLowerCase().startsWith('dialogue:')) {
+      final String rewritten = _rewriteDialogueLine(
+        line,
+        eventFormat,
+        renameMap,
+      );
       output.add(rewritten);
       changed = changed || rewritten != line;
       continue;
@@ -86,15 +88,12 @@ String rewriteAssText(
     output.add(line);
   }
   if (!insertedComments) {
-    output.insertAll(
-      0,
-      <String>[
-        '[Script Info]',
-        for (final MapEntry<String, String> entry in renameMap.entries)
-          '; Font Subset: ${entry.value} - ${entry.key}',
-        '',
-      ],
-    );
+    output.insertAll(0, <String>[
+      '[Script Info]',
+      for (final MapEntry<String, String> entry in renameMap.entries)
+        '; Font Subset: ${entry.value} - ${entry.key}',
+      '',
+    ]);
     changed = true;
   }
   final String rewritten = output.join(newline);
@@ -151,7 +150,9 @@ String _rewriteDialogueLine(
   if (textIndex >= parts.length) {
     return line;
   }
-  parts[textIndex] = _rewriteOverrideBlocks(parts[textIndex], renameMap);
+  parts[textIndex] = _stripUnicodeFormatControls(
+    _rewriteOverrideBlocks(parts[textIndex], renameMap),
+  );
   return '${line.substring(0, colon + 1)}${parts.join(',')}';
 }
 
@@ -204,7 +205,9 @@ String _rewriteFontTags(String block, Map<String, String> renameMap) {
     if (replacement == null) {
       buffer.write(rawName);
     } else {
-      buffer.write(rawName.trimLeft().startsWith('@') ? '@$replacement' : replacement);
+      buffer.write(
+        rawName.trimLeft().startsWith('@') ? '@$replacement' : replacement,
+      );
     }
     index = valueEnd;
   }
@@ -237,6 +240,30 @@ String? _lookupRename(
     }
   }
   return null;
+}
+
+String _stripUnicodeFormatControls(String text) {
+  final StringBuffer buffer = StringBuffer();
+  for (final int codepoint in text.runes) {
+    if (_isUnicodeFormatControl(codepoint)) {
+      continue;
+    }
+    buffer.writeCharCode(codepoint);
+  }
+  return buffer.toString();
+}
+
+bool _isUnicodeFormatControl(int codepoint) {
+  if (codepoint >= 0x200B && codepoint <= 0x200F) {
+    return true;
+  }
+  if (codepoint >= 0x202A && codepoint <= 0x202E) {
+    return true;
+  }
+  if (codepoint >= 0x2060 && codepoint <= 0x206F) {
+    return true;
+  }
+  return codepoint >= 0xFE00 && codepoint <= 0xFE0F;
 }
 
 String _normalizeFontName(String value) {
@@ -297,7 +324,9 @@ String _decodeUtf16(Uint8List bytes, {required bool littleEndian}) {
   final List<int> codeUnits = <int>[];
   for (var i = 0; i + 1 < bytes.length; i += 2) {
     codeUnits.add(
-      littleEndian ? bytes[i] | (bytes[i + 1] << 8) : (bytes[i] << 8) | bytes[i + 1],
+      littleEndian
+          ? bytes[i] | (bytes[i + 1] << 8)
+          : (bytes[i] << 8) | bytes[i + 1],
     );
   }
   return String.fromCharCodes(codeUnits);

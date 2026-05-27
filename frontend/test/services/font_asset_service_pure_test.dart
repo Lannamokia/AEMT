@@ -41,6 +41,37 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Vertical,、……
   });
 
   test(
+    'subtitle character index ignores non-rendering format controls',
+    () async {
+      final Directory root = await Directory.systemTemp.createTemp(
+        'aemt_font_index_controls_',
+      );
+      final String assPath = '${root.path}/sample.ass';
+      await File(assPath).writeAsString('''
+[Script Info]
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize
+Style: Default,Example Font,36
+
+[Events]
+Format: Layer, Start, End, Style, Text
+Dialogue: 0,0:00:00.00,0:00:01.00,Default,\u200Eおはよう
+''');
+      final SubtitleCharIndex index = await const FontAssetService(
+        ffmpegPath: null,
+        sevenZipPath: null,
+      ).indexSubtitleCharacters(<String>[assPath]);
+
+      expect(
+        index.codepointsByFontname['example font'],
+        isNot(contains(0x200E)),
+      );
+      expect(index.codepointsByFontname['example font'], contains(0x304A));
+    },
+  );
+
+  test(
     'Property 10: Font matching is case-insensitive and source-prioritized',
     () {
       final FontMatchResult result =
