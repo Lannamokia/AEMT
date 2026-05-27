@@ -115,6 +115,10 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Default,\u200Eおはよう
           const SubtitleCharIndex(<String, Set<int>>{
             'source han sans jp': <int>{0x41},
             'Source Han Sans SC Medium': <int>{0x4E00},
+            'Source Han Sans CN': <int>{0x4E8C},
+            'Source Han Sans TW': <int>{0x4E09},
+            'Source Han Sans HK': <int>{0x56DB},
+            'Source Han Sans KR': <int>{0x4E94},
           }),
           const <ResolvedFontFile>[
             ResolvedFontFile(
@@ -145,6 +149,42 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Default,\u200Eおはよう
               weight: 500,
               maxpNumGlyphs: 100,
             ),
+            ResolvedFontFile(
+              path: 'C:/fonts/SourceHanSansSC-Regular.otf',
+              fileName: 'SourceHanSansSC-Regular.otf',
+              mimeType: 'font/otf',
+              familyNames: <String>{'Source Han Sans SC Regular'},
+              fullNames: <String>{'Source Han Sans SC Regular'},
+              weight: 400,
+              maxpNumGlyphs: 100,
+            ),
+            ResolvedFontFile(
+              path: 'C:/fonts/SourceHanSansTC-Normal.otf',
+              fileName: 'SourceHanSansTC-Normal.otf',
+              mimeType: 'font/otf',
+              familyNames: <String>{'Source Han Sans TC Normal'},
+              fullNames: <String>{'Source Han Sans TC Normal'},
+              weight: 400,
+              maxpNumGlyphs: 100,
+            ),
+            ResolvedFontFile(
+              path: 'C:/fonts/SourceHanSansHC-Normal.otf',
+              fileName: 'SourceHanSansHC-Normal.otf',
+              mimeType: 'font/otf',
+              familyNames: <String>{'Source Han Sans HC Normal'},
+              fullNames: <String>{'Source Han Sans HC Normal'},
+              weight: 400,
+              maxpNumGlyphs: 100,
+            ),
+            ResolvedFontFile(
+              path: 'C:/fonts/SourceHanSansK-Normal.otf',
+              fileName: 'SourceHanSansK-Normal.otf',
+              mimeType: 'font/otf',
+              familyNames: <String>{'Source Han Sans K Normal'},
+              fullNames: <String>{'Source Han Sans K Normal'},
+              weight: 400,
+              maxpNumGlyphs: 100,
+            ),
           ],
         );
 
@@ -156,6 +196,22 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Default,\u200Eおはよう
     expect(
       result.matched['source han sans sc medium']!.fileName,
       'SourceHanSansSC-Medium.otf',
+    );
+    expect(
+      result.matched['source han sans cn']!.fileName,
+      'SourceHanSansSC-Regular.otf',
+    );
+    expect(
+      result.matched['source han sans tw']!.fileName,
+      'SourceHanSansTC-Normal.otf',
+    );
+    expect(
+      result.matched['source han sans hk']!.fileName,
+      'SourceHanSansHC-Normal.otf',
+    );
+    expect(
+      result.matched['source han sans kr']!.fileName,
+      'SourceHanSansK-Normal.otf',
     );
   });
 

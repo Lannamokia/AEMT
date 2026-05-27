@@ -50,21 +50,26 @@ class FontAssetService {
         ? 'Source Han Serif'
         : 'Source Han Sans';
     final String? halfWidth = match.group(2);
-    final String region = switch (match.group(3)?.toUpperCase()) {
-      'SC' => 'SC',
-      'TC' => 'TC',
-      'HC' => 'HK',
-      'K' => 'KR',
-      _ => 'JP',
+    final List<String> regions = switch (match.group(3)?.toUpperCase()) {
+      // ASS files in the wild often use ISO-ish region aliases while Adobe's
+      // Source Han file names use SC/TC/HC/K region tags.
+      'SC' => const <String>['SC', 'CN'],
+      'TC' => const <String>['TC', 'TW'],
+      'HC' => const <String>['HC', 'HK'],
+      'K' => const <String>['K', 'KR'],
+      _ => const <String>['', 'JP'],
     };
     final String? style = _sourceHanStyleName(match.group(4));
     final String base = halfWidth == null ? family : '$family HW';
     final Set<String> aliases = <String>{};
-    if (style != null) {
-      aliases.add('$base $region $style');
-    }
-    if (_isRegularSourceHanFace(candidate, style)) {
-      aliases.add('$base $region');
+    for (final String region in regions) {
+      final String prefix = region.isEmpty ? base : '$base $region';
+      if (style != null) {
+        aliases.add('$prefix $style');
+      }
+      if (_isRegularSourceHanFace(candidate, style)) {
+        aliases.add(prefix);
+      }
     }
     return aliases;
   }
