@@ -51,12 +51,31 @@ AEMT 会按以下顺序查找 `7z.exe`：
 
 AEMT 会按以下顺序查找字体子集化工具：
 
-1. 自定义配置路径
-2. 运行目录下的 `bin/`
-3. `FONTTOOLS_BIN_DIR`
-4. 系统 `PATH` 中的 `pyftsubset` / `ttx`
+1. `FONTTOOLS_BIN_DIR`
+2. 自定义运行时目录
+3. 自定义运行时目录下的 `bin/`
+4. 自定义运行时可执行文件所在目录
+5. 当前运行目录下的 `bin/`
+6. 当前运行目录父级下的 `bin/`
+7. 系统 `PATH` 中的 `pyftsubset.exe` / `ttx.exe`
+8. 系统 `PATH` 中的 `pyftsubset` / `ttx`
 
 字体子集化依赖 Python 版 FontTools 的 `pyftsubset` 与 `ttx`。未找到时程序仍可导出，但会跳过字体子集化与 ASS 字体名改写。
+
+便携版会内置 `bin/pyftsubset.exe`、`bin/ttx.exe` 与 `python/python.exe`。这两个 `bin/` 下的启动器只调用同一便携包根目录里的 `python/python.exe`，不会再搜索用户系统 Python；如需覆盖内置版本，可使用 `FONTTOOLS_BIN_DIR` 或自定义运行时路径。
+
+AEMT 会按以下顺序查找内置字体子集化启动器所需的 Python：
+
+1. 便携包根目录下的 `python/python.exe`
+
+普通开发环境或系统安装的 FontTools 启动器由对应启动器自行决定使用哪个 Python，AEMT 不直接探测系统 Python。
+
+打包脚本会为字体子集化运行时使用：
+
+1. Python embeddable `3.13.9`
+2. `fonttools[woff]` `4.63.0`
+
+打包时会先在 `tools/cache/` 缓存下载文件；缓存不存在时从 Python 官网与 pip bootstrap 地址下载。
 
 ## 开发模式启动
 
@@ -85,7 +104,7 @@ AEMT 会按以下顺序查找字体子集化工具：
 
 - `bin/`: 便携版优先搜索的运行时目录；会先复制项目根目录 `bin/`
 - `python/`: 官方 Windows embeddable Python 运行时；脚本会安装 `fonttools[woff]`，并在 `bin/` 生成 `pyftsubset.exe` / `ttx.exe`，避免依赖用户系统 Python 或全局 pip 包
-- `ffmpeg/`: 会优先使用项目根目录 `ffmpeg/` 下的 `ffmpeg.exe` / `ffprobe.exe` 覆盖便携版 `bin/` 中的同名文件
+- `ffmpeg`: 会优先使用项目根目录 `ffmpeg/` 下的 `ffmpeg.exe` / `ffprobe.exe` 与相关 DLL，复制到便携版 `bin/`
 - `mkvtoolnix`: 打包时会优先从 `MKVTOOLNIX_BIN_DIR`、系统安装目录或 `PATH` 中找到 `mkvpropedit.exe` 并复制其所在目录内容到便携版 `bin/`
 - `7z`: 打包时会优先从系统安装目录或 `PATH` 中找到 `7z.exe` / `7za.exe` / `7zz.exe` 并复制其所在目录内容到便携版 `bin/`
 
