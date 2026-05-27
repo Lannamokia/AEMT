@@ -29,6 +29,71 @@ class FontAssetService {
         .toLowerCase();
   }
 
+  static Set<String> _candidateMatchNames(ResolvedFontFile candidate) {
+    return <String>{
+      ...candidate.familyNames,
+      ...candidate.fullNames,
+      ..._sourceHanRegionAliases(candidate),
+    }.map(normalizeFontName).toSet();
+  }
+
+  static Set<String> _sourceHanRegionAliases(ResolvedFontFile candidate) {
+    final String stem = p.basenameWithoutExtension(candidate.fileName);
+    final RegExpMatch? match = RegExp(
+      r'^SourceHan(Sans|Serif)(HW)?(SC|TC|HC|K)?(?:[-_]?(.+))?$',
+      caseSensitive: false,
+    ).firstMatch(stem);
+    if (match == null) {
+      return const <String>{};
+    }
+    final String family = match.group(1)!.toLowerCase() == 'serif'
+        ? 'Source Han Serif'
+        : 'Source Han Sans';
+    final String? halfWidth = match.group(2);
+    final String region = switch (match.group(3)?.toUpperCase()) {
+      'SC' => 'SC',
+      'TC' => 'TC',
+      'HC' => 'HK',
+      'K' => 'KR',
+      _ => 'JP',
+    };
+    final String? style = _sourceHanStyleName(match.group(4));
+    final String base = halfWidth == null ? family : '$family HW';
+    final Set<String> aliases = <String>{};
+    if (style != null) {
+      aliases.add('$base $region $style');
+    }
+    if (_isRegularSourceHanFace(candidate, style)) {
+      aliases.add('$base $region');
+    }
+    return aliases;
+  }
+
+  static String? _sourceHanStyleName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    return value
+        .replaceAllMapped(RegExp(r'(?<=[a-z])(?=[A-Z])'), (_) => ' ')
+        .replaceAll(RegExp(r'[-_]+'), ' ')
+        .trim();
+  }
+
+  static bool _isRegularSourceHanFace(
+    ResolvedFontFile candidate,
+    String? style,
+  ) {
+    final String normalizedStyle = (style ?? '')
+        .replaceAll(' ', '')
+        .toLowerCase();
+    if (normalizedStyle.isNotEmpty &&
+        normalizedStyle != 'regular' &&
+        normalizedStyle != 'normal') {
+      return false;
+    }
+    return !candidate.bold && !candidate.italic && candidate.weight <= 450;
+  }
+
   Future<List<ResolvedFontFile>> resolveFontFiles(
     List<String> importedFontSources,
     String tempDir,
@@ -247,10 +312,7 @@ class FontAssetService {
       final String key = normalizeFontName(fontName);
       ResolvedFontFile? selected;
       for (final ResolvedFontFile candidate in ordered) {
-        final Set<String> names = <String>{
-          ...candidate.familyNames,
-          ...candidate.fullNames,
-        }.map(normalizeFontName).toSet();
+        final Set<String> names = _candidateMatchNames(candidate);
         if (names.contains(key)) {
           selected = candidate;
           break;
