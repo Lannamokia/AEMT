@@ -480,9 +480,12 @@ class FontAssetService {
     await Directory(plan.subsetDir).create(recursive: true);
     await Directory(p.dirname(plan.codepointsFilePath)).create(recursive: true);
     await _appendLicenseSidecar(plan);
+    final ({List<int> codepoints, Set<int> excluded}) prepared =
+        await _prepareSubsetCodepoints(plan);
+    final List<int> subsetCodepoints = prepared.codepoints;
     await File(
       plan.codepointsFilePath,
-    ).writeAsString(_formatUnicodeFile(plan.codepoints), encoding: utf8);
+    ).writeAsString(_formatUnicodeFile(subsetCodepoints), encoding: utf8);
     await _runProcessOrThrow(
       plan.pyftsubsetPath,
       plan.pyftsubsetArguments,
@@ -523,20 +526,23 @@ class FontAssetService {
         (List<SfntFontFace> faces) =>
             faces.expand((SfntFontFace face) => face.cmapCodepoints).toSet(),
       );
-      final Set<int> missing = plan.codepoints
+      final Set<int> missing = subsetCodepoints
           .where((int codepoint) => !_isNonRenderingCodepoint(codepoint))
           .where((int codepoint) => !cmap.contains(codepoint))
           .toSet();
       if (missing.isNotEmpty) {
         throw Exception(
-          '${plan.originalFont.path}: subset FAIL: missing ${missing.length} codepoints',
+          '${plan.originalFont.path}: subset FAIL: missing ${missing.length} codepoints: ${_formatCodepointList(missing)}',
         );
       }
     }
+    final String filteredSuffix = prepared.excluded.isEmpty
+        ? ''
+        : ', filtered ${prepared.excluded.length}';
     return (
       verifyLogLine: plan.verifyAfterSubset
-          ? 'subset OK: ${plan.originalFont.fileName} (${plan.codepoints.length})'
-          : '子集化校验已跳过',
+          ? 'subset OK: ${plan.originalFont.fileName} (${subsetCodepoints.length}$filteredSuffix)'
+          : '子集化校验已跳过$filteredSuffix',
       fsTypeWarning: plan.fsTypeRestricted
           ? '字体 ${plan.originalFont.fileName} 标记为受限嵌入...'
           : null,
@@ -544,7 +550,11 @@ class FontAssetService {
   }
 
   bool _isNonRenderingCodepoint(int codepoint) {
-    return codepoint == 0x09 ||
+    // U+0020 SPACE is treated as non-rendering for verification because some
+    // fonts map it to the .notdef glyph; pyftsubset may drop that mapping
+    // during subsetting, leaving the cmap without an explicit space entry.
+    return codepoint == 0x20 ||
+        codepoint == 0x09 ||
         codepoint == 0x0A ||
         codepoint == 0x0D ||
         _isUnicodeFormatControl(codepoint);
@@ -557,6 +567,48 @@ class FontAssetService {
               'U+${codepoint.toRadixString(16).toUpperCase().padLeft(4, '0')}',
         )
         .join('\n');
+  }
+
+  String _formatCodepointList(Set<int> codepoints) {
+    return codepoints
+        .map(
+          (int codepoint) =>
+              'U+${codepoint.toRadixString(16).toUpperCase().padLeft(4, '0')}',
+        )
+        .join(', ');
+  }
+
+  Future<({List<int> codepoints, Set<int> excluded})> _prepareSubsetCodepoints(
+    FontSubsetStepPlan plan,
+  ) async {
+    final Set<int> excluded = <int>{};
+    try {
+      final List<SfntFontFace> faces = await readSfntFontFaces(
+        plan.originalFont.path,
+      );
+      final SfntFontFace? selectedFace = faces
+          .cast<SfntFontFace?>()
+          .firstWhere(
+            (SfntFontFace? face) => face!.trackIndex == plan.originalFont.trackIndex,
+            orElse: () => null,
+          );
+      final Set<int> cmap = selectedFace?.cmapCodepoints ?? <int>{};
+      if (cmap.isNotEmpty) {
+        final List<int> filtered = <int>[];
+        for (final int codepoint in plan.codepoints) {
+          if (cmap.contains(codepoint) || _isNonRenderingCodepoint(codepoint)) {
+            filtered.add(codepoint);
+          } else {
+            excluded.add(codepoint);
+          }
+        }
+        return (codepoints: filtered, excluded: excluded);
+      }
+    } catch (_) {
+      // If the original font cannot be read, fall back to the full requested
+      // set and let pyftsubset decide what to keep.
+    }
+    return (codepoints: plan.codepoints, excluded: excluded);
   }
 
   Future<void> _appendLicenseSidecar(FontSubsetStepPlan plan) async {
