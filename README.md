@@ -87,6 +87,8 @@ AEMT 会按以下顺序查找内置字体子集化启动器所需的 Python：
 
 - 设置 `PUB_HOSTED_URL=https://pub.flutter-io.cn`
 - 设置 `FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`
+- 当仓库路径包含中文等非 ASCII 字符时，创建并使用稳定的纯英文目录联接，避免 Flutter/MSBuild 路径编码错误
+- 检测与当前路径不兼容的 Windows CMake 缓存，将旧构建目录保留为 `build/windows/x64.stale-时间戳/` 后重新生成
 - 以 Windows 桌面调试模式启动 AEMT
 
 ## 打包便携版
@@ -101,6 +103,8 @@ AEMT 会按以下顺序查找内置字体子集化启动器所需的 Python：
 - 压缩包：`dist/AEMT-windows-portable.zip`
 
 打包脚本会执行 Windows release 构建，并把运行时依赖复制到：
+
+打包时使用与开发启动脚本相同的纯英文路径兼容和 CMake 缓存迁移逻辑；Flutter 构建返回非零退出码时会立即停止，不再继续打包旧构建产物。
 
 - `bin/`: 便携版优先搜索的运行时目录；会先复制项目根目录 `bin/`
 - `python/`: 官方 Windows embeddable Python 运行时；脚本会安装 `fonttools[woff]`，并在 `bin/` 生成 `pyftsubset.exe` / `ttx.exe`，避免依赖用户系统 Python 或全局 pip 包

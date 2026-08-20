@@ -9,7 +9,10 @@ $PSDefaultParameterValues['Add-Content:Encoding'] = 'utf8'
 & "$env:SystemRoot\System32\chcp.com" 65001 > $null
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$frontend = Join-Path $repoRoot 'frontend'
+. (Join-Path $PSScriptRoot 'windows_flutter_path.ps1')
+$buildRepoRoot = Resolve-AemtAsciiRepoRoot -RepoRoot $repoRoot
+Initialize-AemtFlutterWindowsBuildCache -BuildRepoRoot $buildRepoRoot
+$frontend = Join-Path $buildRepoRoot 'frontend'
 $distRoot = Join-Path $repoRoot 'dist'
 $portableRoot = Join-Path $distRoot 'AEMT-windows-portable'
 $portableBin = Join-Path $portableRoot 'bin'
@@ -258,6 +261,9 @@ $env:FLUTTER_STORAGE_BASE_URL = 'https://storage.flutter-io.cn'
 Push-Location $frontend
 try {
   & $flutter build windows
+  if ($LASTEXITCODE -ne 0) {
+    throw "Flutter Windows build failed with exit code $LASTEXITCODE"
+  }
 }
 finally {
   Pop-Location
