@@ -319,54 +319,82 @@ class _QueueRunner {
 
   Future<Map<String, _SharedFontPipelineContext>>
   _prepareSharedFontPipelines() async {
-    if (_controller.debugTaskPlanBuilder != null ||
-        _controller.mediaInfo == null) {
+    if (_controller.debugTaskPlanBuilder != null) {
       return <String, _SharedFontPipelineContext>{};
     }
-    final List<ExportTask> queued = _controller.tasks
-        .where((ExportTask task) => task.status == TaskStatus.queued)
-        .toList();
-    if (queued.length < 2) {
-      return <String, _SharedFontPipelineContext>{};
+    final Map<String, List<ExportTask>> tasksByMedia =
+        <String, List<ExportTask>>{};
+    for (final ExportTask task in _controller.tasks) {
+      if (task.status != TaskStatus.queued) {
+        continue;
+      }
+      final MediaInfo? media = _controller._taskPlanner.mediaForTask(task);
+      final String inputPath = media?.inputPath ?? '';
+      if (media == null || inputPath.isEmpty) {
+        continue;
+      }
+      tasksByMedia
+          .putIfAbsent(p.normalize(inputPath), () => <ExportTask>[])
+          .add(task);
     }
-    final Set<String> bindingKeys = <String>{};
-    final Set<String> taskIds = <String>{};
-    for (final ExportTask task in queued) {
-      bindingKeys.addAll(task.bindingKeys);
-      taskIds.add(task.id);
+    final Map<String, _SharedFontPipelineContext> contexts =
+        <String, _SharedFontPipelineContext>{};
+    for (final MapEntry<String, List<ExportTask>> entry
+        in tasksByMedia.entries) {
+      if (entry.value.length < 2) {
+        continue;
+      }
+      final _SharedFontPipelineContext? context =
+          await _prepareSharedFontPipelineForMedia(entry.key, entry.value);
+      if (context != null) {
+        contexts[entry.key] = context;
+      }
     }
-    if (bindingKeys.isEmpty) {
-      return <String, _SharedFontPipelineContext>{};
+    return contexts;
+  }
+
+  Future<_SharedFontPipelineContext?> _prepareSharedFontPipelineForMedia(
+    String mediaKey,
+    List<ExportTask> tasks,
+  ) async {
+    final MediaInfo? info = _controller._taskPlanner.mediaForTask(tasks.first);
+    if (info == null) {
+      return null;
+    }
+    final Map<String, SubtitleBinding> bindingsByPath =
+        <String, SubtitleBinding>{};
+    for (final ExportTask task in tasks) {
+      for (final SubtitleBinding binding
+          in _controller._taskPlanner.bindingsForTask(task)) {
+        bindingsByPath['${binding.key}|${binding.filePath}'] = binding;
+      }
+    }
+    if (bindingsByPath.isEmpty) {
+      return null;
     }
     final Directory workDir = await Directory.systemTemp.createTemp(
       'aemt_shared_',
     );
     try {
-      final List<SubtitleBinding> bindings = _controller._resolveBindings(
-        bindingKeys.toList(),
-      );
-      if (bindings.isEmpty) {
-        await _controller._deleteOwnedTempDirectory(workDir.path);
-        return <String, _SharedFontPipelineContext>{};
-      }
       final _FontPipelineResult result = await _controller._taskPlanner
-          ._runFontPipelineForBindings(bindings, workDir.path);
+          ._runFontPipelineForBindings(
+            bindingsByPath.values.toList(),
+            workDir.path,
+            info: info,
+          );
       if (result.subsetSteps.isEmpty) {
         await _controller._deleteOwnedTempDirectory(workDir.path);
-        return <String, _SharedFontPipelineContext>{};
+        return null;
       }
-      final String key = _sharedFontPipelineKeyForMedia();
-      return <String, _SharedFontPipelineContext>{
-        key: _SharedFontPipelineContext(
-          key: key,
-          workDir: workDir.path,
-          result: result,
-          pendingTaskIds: taskIds,
-        ),
-      };
+      return _SharedFontPipelineContext(
+        key: mediaKey,
+        workDir: workDir.path,
+        result: result,
+        pendingTaskIds: <String>{for (final ExportTask task in tasks) task.id},
+      );
     } catch (_) {
       await _controller._deleteOwnedTempDirectory(workDir.path);
-      return <String, _SharedFontPipelineContext>{};
+      return null;
     }
   }
 
@@ -374,8 +402,9 @@ class _QueueRunner {
     ExportTask task,
     Map<String, _SharedFontPipelineContext> sharedPipelines,
   ) {
+    final MediaInfo? media = _controller._taskPlanner.mediaForTask(task);
     final _SharedFontPipelineContext? context =
-        sharedPipelines[_sharedFontPipelineKeyForMedia()];
+        sharedPipelines[p.normalize(media?.inputPath ?? '')];
     if (context == null ||
         context.failed ||
         !context.pendingTaskIds.contains(task.id)) {
@@ -429,10 +458,6 @@ class _QueueRunner {
       }
     }
     await _controller._deleteOwnedTempDirectory(plan.workingDirectory);
-  }
-
-  String _sharedFontPipelineKeyForMedia() {
-    return p.normalize(_controller.mediaInfo?.inputPath ?? '');
   }
 
   void clearCompleted() {
@@ -494,6 +519,8 @@ class _QueueRunner {
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       profile: profile,
       bindingKeys: resolvedBindingKeys,
+      media: _controller.mediaInfo,
+      bindings: _controller._resolveBindings(resolvedBindingKeys),
       label: _controller._exportConfig.buildTaskLabel(
         profile,
         resolvedBindingKeys,

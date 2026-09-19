@@ -43,11 +43,21 @@ class _TaskPlanner {
 
   final AemtController _controller;
 
+  MediaInfo? mediaForTask(ExportTask task) =>
+      task.media ?? _controller.mediaInfo;
+
+  List<SubtitleBinding> bindingsForTask(ExportTask task) {
+    if (task.bindings.isNotEmpty) {
+      return task.bindings;
+    }
+    return _controller._resolveBindings(task.bindingKeys);
+  }
+
   Future<TaskPlan> buildTaskPlan(
     ExportTask task, {
     _SharedFontPipelineUse? sharedFontPipeline,
   }) async {
-    final MediaInfo? info = _controller.mediaInfo;
+    final MediaInfo? info = mediaForTask(task);
     if (info == null) {
       throw Exception('请先导入视频。');
     }
@@ -92,10 +102,8 @@ class _TaskPlanner {
       );
       final String outputPath = task.outputPath;
       await Directory(_controller.outputDirectory).create(recursive: true);
-      final List<SubtitleBinding> bindings = _controller._resolveBindings(
-        task.bindingKeys,
-      );
-      _controller._validateTaskBindings(task.profile, bindings);
+      final List<SubtitleBinding> bindings = bindingsForTask(task);
+      _controller._validateTaskBindings(task.profile, bindings, info);
       final _FontPipelineResult? sharedResult = sharedFontPipeline == null
           ? null
           : _fontPipelineWithSubsetSteps(
@@ -105,7 +113,11 @@ class _TaskPlanner {
       if (task.profile == ExportProfile.muxMkv) {
         final _FontPipelineResult fontPipeline =
             sharedResult ??
-            await _runFontPipelineForBindings(bindings, workDir.path);
+            await _runFontPipelineForBindings(
+              bindings,
+              workDir.path,
+              info: info,
+            );
         return _buildMuxPlan(
           info: info,
           bindings: bindings,
@@ -118,7 +130,7 @@ class _TaskPlanner {
       }
       final _FontPipelineResult fontPipeline =
           sharedResult ??
-          await _runFontPipelineForBindings(bindings, workDir.path);
+          await _runFontPipelineForBindings(bindings, workDir.path, info: info);
       return _buildHardsubPlan(
         info: info,
         binding: bindings.first,
@@ -136,8 +148,9 @@ class _TaskPlanner {
 
   Future<_FontPipelineResult> _runFontPipelineForBindings(
     List<SubtitleBinding> bindings,
-    String workDir,
-  ) async {
+    String workDir, {
+    required MediaInfo info,
+  }) async {
     final DebugFontResolver? debugFontResolver = _controller.debugFontResolver;
     final List<ResolvedFontFile> importedFonts = debugFontResolver == null
         ? await _controller._fontAssetService.resolveFontFiles(
@@ -147,7 +160,6 @@ class _TaskPlanner {
         : await debugFontResolver(_controller.importedFontSources, workDir);
     final DebugAttachmentExtractor? debugAttachmentExtractor =
         _controller.debugAttachmentExtractor;
-    final MediaInfo info = _controller.mediaInfo!;
     final List<ResolvedFontFile> extractedAttachments =
         debugAttachmentExtractor == null
         ? await _controller._fontAssetService.extractEnabledInputAttachments(
@@ -373,7 +385,10 @@ class _TaskPlanner {
       enabledVideo.first.codec,
       preferredCodecFamily: codecFamilyForProfile(ExportProfile.hardsubMp4),
     );
-    final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
+    final bool useLegacyAudio = shouldUseLegacyAudioPath(
+      enabledAudio,
+      info.inputPath,
+    );
     final toneMapping = _buildToneMappingFilter(
       enabledVideo.first.videoInfo ??
           info.primaryVideo ??
@@ -417,7 +432,11 @@ class _TaskPlanner {
         _controller.videoEncodingConfigs[encoder.encoder] ??
             VideoEncodingConfig.defaultsFor(encoder.encoder),
       ),
-      ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
+      ..._buildAudioArgumentsForStreams(
+        enabledAudio,
+        useLegacyAudio,
+        info.inputPath,
+      ),
       ...toneMapping.metadataArgs,
       '-movflags',
       '+faststart',
@@ -434,6 +453,7 @@ class _TaskPlanner {
       enabledAudio: enabledAudio,
       encoder: encoder,
       toneMapping: toneMapping,
+      inputPath: info.inputPath,
     );
     final String commandPreview = _renderCommandPreview(
       diagnosticComments,
@@ -514,7 +534,10 @@ class _TaskPlanner {
       enabledVideo.first.codec,
       preferredCodecFamily: codecFamilyForProfile(ExportProfile.muxMkv),
     );
-    final bool useLegacyAudio = shouldUseLegacyAudioPath(enabledAudio);
+    final bool useLegacyAudio = shouldUseLegacyAudioPath(
+      enabledAudio,
+      info.inputPath,
+    );
     final toneMapping = _buildToneMappingFilter(
       enabledVideo.first.videoInfo ??
           info.primaryVideo ??
@@ -582,7 +605,11 @@ class _TaskPlanner {
             VideoEncodingConfig.defaultsFor(encoder.encoder),
       ),
       ..._buildPixelFormatArguments(encoder),
-      ..._buildAudioArgumentsForStreams(enabledAudio, useLegacyAudio),
+      ..._buildAudioArgumentsForStreams(
+        enabledAudio,
+        useLegacyAudio,
+        info.inputPath,
+      ),
       ...toneMapping.metadataArgs,
       '-c:s',
       'copy',
@@ -630,6 +657,7 @@ class _TaskPlanner {
       enabledAudio: enabledAudio,
       encoder: encoder,
       toneMapping: toneMapping,
+      inputPath: info.inputPath,
     );
     final String ffmpegPreview = _renderCommandPreview(
       diagnosticComments,
@@ -678,14 +706,17 @@ class _TaskPlanner {
     );
   }
 
-  bool shouldUseLegacyAudioPath(List<MediaStreamEntry> streams) {
+  bool shouldUseLegacyAudioPath(
+    List<MediaStreamEntry> streams,
+    String inputPath,
+  ) {
     if (_controller.audioDefaultProfile !=
         const AudioStreamConfig.defaultAac()) {
       return false;
     }
     for (final MediaStreamEntry stream in streams) {
       final String key = _controller._audioStreamConfigKey(
-        _controller.mediaInfo?.inputPath ?? '',
+        inputPath,
         stream.index,
       );
       final AudioStreamConfig config =
@@ -701,6 +732,7 @@ class _TaskPlanner {
   List<String> _buildAudioArgumentsForStreams(
     List<MediaStreamEntry> streams,
     bool useLegacyAudio,
+    String inputPath,
   ) {
     if (streams.isEmpty) {
       return const <String>[];
@@ -712,7 +744,7 @@ class _TaskPlanner {
     for (var outIdx = 0; outIdx < streams.length; outIdx++) {
       final MediaStreamEntry stream = streams[outIdx];
       final String key = _controller._audioStreamConfigKey(
-        _controller.mediaInfo?.inputPath ?? '',
+        inputPath,
         stream.index,
       );
       final AudioStreamConfig config =
@@ -1426,17 +1458,18 @@ class _TaskPlanner {
       String? tonemapAlgorithm,
     })
     toneMapping,
+    required String inputPath,
   }) {
     final List<String> comments = <String>[];
     for (var i = 0; i < enabledAudio.length; i++) {
       final MediaStreamEntry stream = enabledAudio[i];
       final String key = _controller._audioStreamConfigKey(
-        _controller.mediaInfo?.inputPath ?? '',
+        inputPath,
         stream.index,
       );
       final AudioStreamConfig config =
           _controller.audioStreamConfigs[key] ??
-          (shouldUseLegacyAudioPath(enabledAudio)
+          (shouldUseLegacyAudioPath(enabledAudio, inputPath)
               ? const AudioStreamConfig.defaultAac()
               : _controller.audioDefaultProfile);
       comments.add('# audio:$i ${config.encoder.trim()}');

@@ -1515,12 +1515,16 @@ class ExportTask {
     required this.currentStep,
     required this.commandPreview,
     required this.log,
+    this.media,
+    this.bindings = const <SubtitleBinding>[],
     this.error,
   });
 
   final String id;
   final ExportProfile profile;
   final List<String> bindingKeys;
+  final MediaInfo? media;
+  final List<SubtitleBinding> bindings;
   final String label;
   final String outputPath;
   final TaskStatus status;
@@ -1543,6 +1547,8 @@ class ExportTask {
       id: id,
       profile: profile,
       bindingKeys: bindingKeys,
+      media: media,
+      bindings: bindings,
       label: label,
       outputPath: outputPath,
       status: status ?? this.status,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../controller.dart';
 import '../models.dart';
@@ -155,6 +156,17 @@ class TaskPanel extends StatelessWidget {
                                             Text(
                                               '${_profileLabel(task.profile)} / ${_statusLabel(task.status)}',
                                             ),
+                                            if (task.media
+                                                case final MediaInfo
+                                                    media) ...<Widget>[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                '源: ${p.basename(media.inputPath)}',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF667085),
+                                                ),
+                                              ),
+                                            ],
                                             if (task
                                                 .currentStep
                                                 .isNotEmpty) ...<Widget>[
@@ -263,6 +275,9 @@ String _taskSemanticsLabel(ExportTask task) {
     _profileLabel(task.profile),
     _statusLabel(task.status),
   ];
+  if (task.media case final MediaInfo media) {
+    parts.add('源 ${p.basename(media.inputPath)}');
+  }
   if (task.currentStep.isNotEmpty) {
     parts.add(task.currentStep);
   }

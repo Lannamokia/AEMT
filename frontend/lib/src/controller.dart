@@ -746,7 +746,10 @@ class AemtController extends ChangeNotifier {
 
   @visibleForTesting
   bool debugShouldUseLegacyAudioPath(List<MediaStreamEntry> streams) {
-    return _taskPlanner.shouldUseLegacyAudioPath(streams);
+    return _taskPlanner.shouldUseLegacyAudioPath(
+      streams,
+      mediaInfo?.inputPath ?? '',
+    );
   }
 
   @visibleForTesting
@@ -987,6 +990,7 @@ class AemtController extends ChangeNotifier {
   void _validateTaskBindings(
     ExportProfile profile,
     List<SubtitleBinding> bindings,
+    MediaInfo info,
   ) {
     if (bindings.isEmpty) {
       throw Exception('请至少选择一条外挂字幕。');
@@ -1004,7 +1008,7 @@ class AemtController extends ChangeNotifier {
       }
     }
     for (final SubtitleBinding binding in bindings) {
-      if (!_isBindingEnabled(mediaInfo!, binding)) {
+      if (!_isBindingEnabled(info, binding)) {
         throw Exception('所选字幕中存在未启用项。');
       }
     }
