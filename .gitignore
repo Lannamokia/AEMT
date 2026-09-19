@@ -2,4 +2,5 @@
 /ffmpeg
 /tools/*
 !/tools/fonttools_launcher.dart
-.kiro
+/.kiro
+/.vscode
